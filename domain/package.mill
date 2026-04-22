@@ -1,0 +1,9 @@
+package build.domain
+
+import mill._, scalalib._
+
+object `package` extends _root_.build.CommonScalaModule
+    with _root_.build.PublishSupport {
+
+  override def artifactName = "github-dependency-graph-domain"
+}

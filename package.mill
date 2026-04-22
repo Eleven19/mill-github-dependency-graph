@@ -1,0 +1,34 @@
+package build
+
+import mill._, scalalib._
+import mill.scalalib.publish._
+import mill.scalalib.scalafmt._
+
+val scala3 = "3.8.2"
+
+trait CommonScalaModule extends ScalaModule
+    with ScalafmtModule {
+
+  def scalaVersion = scala3
+  def scalacOptions = Seq("-deprecation")
+}
+
+trait PublishSupport extends PublishModule with SonatypeCentralPublishModule {
+
+  def publishVersion = Task.Input {
+    sys.env.getOrElse("PUBLISH_VERSION", "0.1.0-SNAPSHOT")
+  }
+
+  def pomSettings = PomSettings(
+    description = "Submit your Mill project's dependency graph to GitHub",
+    organization = "io.eleven19.mill-github-dependency-graph",
+    url = "https://github.com/Eleven19/mill-github-dependency-graph",
+    licenses = Seq(License.`Apache-2.0`),
+    versionControl = VersionControl
+      .github(owner = "Eleven19", repo = "mill-github-dependency-graph"),
+    developers = Seq(
+      Developer("ckipp01", "Chris Kipp", "https://www.chris-kipp.io"),
+      Developer("DamianReeves", "Damian Reeves", "https://github.com/DamianReeves")
+    )
+  )
+}

@@ -1,0 +1,16 @@
+mill-github-dependency-graph
+Copyright 2024 Eleven19 Ltd
+
+This product is a derivative work based on mill-github-dependency-graph,
+originally created by Chris Kipp (ckipp01).
+
+Original project: https://github.com/ckipp01/mill-github-dependency-graph
+Original copyright: Copyright 2022 Chris Kipp
+Original license: Apache License, Version 2.0
+
+Modifications by Eleven19 Ltd include:
+- Updated to support Mill 1.x (1.1.5+)
+- Removed cross-compilation for Mill 0.10.x, 0.11.x, 0.12.x
+- Repackaged under io.eleven19 namespace
+- Converted build to Mill 1.x build.mill.yaml / package.mill format
+- Updated publishing coordinates to io.eleven19.mill-github-dependency-graph
