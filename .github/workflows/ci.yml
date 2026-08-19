@@ -5,9 +5,16 @@ on:
   push:
     branches:
       - main
+  # `branches` is explicit so that stacked pull requests, which target another
+  # feature branch rather than `main`, are checked like any other.
+  #
+  # No `paths-ignore` here. It used to skip README-only pull requests, which
+  # leaves them with no checks at all rather than passing ones — awkward if
+  # these jobs ever become required. The jobs are a few minutes; the saving was
+  # not worth the hole.
   pull_request:
-    paths-ignore:
-      - 'README.md'
+    branches:
+      - '**'
 
 concurrency:
   group: ${{ (github.ref == 'refs/heads/main' ||  startsWith(github.ref, 'refs/tags') ) && format('contributor-pr-base-{0}', github.sha) || format('contributor-pr-{0}', github.ref) }}
