@@ -1,0 +1,10 @@
+# Code owners for this repository.
+#
+# Branch protection on `main` requires a review from a code owner before a
+# pull request can merge. Repository admins bypass that requirement, so the
+# maintainer can merge their own work without waiting for a second pair of
+# eyes, while everyone else needs a maintainer's review.
+#
+# See: https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+
+* @DamianReeves
