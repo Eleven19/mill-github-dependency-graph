@@ -4,3 +4,11 @@ mill-build:
   jvmIndexVersion: latest.release
   mvnDeps:
     - "com.lihaoyi::mill-contrib-buildinfo:$MILL_VERSION"
+    # This repository submits its own dependency graph with its own plugin, so
+    # the plugin has to be on the build classpath like any other consumer would
+    # put it. Without this, `Graph/submit` cannot be resolved at all.
+    #
+    # This tracks the last published release rather than the working tree, so
+    # it lags behind by a version. Bump it after each release to dogfood what
+    # was just published.
+    - "io.eleven19.mill-github-dependency-graph::mill-github-dependency-graph:0.0.2"
