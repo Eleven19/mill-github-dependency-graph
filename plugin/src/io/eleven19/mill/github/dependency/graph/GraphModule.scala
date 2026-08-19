@@ -14,11 +14,12 @@ trait GraphModule extends ExternalModule {
   // `EvaluatorBridge`. In Mill 1.x, non-exclusive Task.Command bodies receive
   // an `EvaluatorProxy` that throws "No evaluator available here; Evaluator
   // is only available in exclusive commands" on those accesses.
-  def submit(ev: Evaluator): Task.Command[Unit] = Task.Command(exclusive = true) {
-    val manifests = generate(ev)()
-    val snapshot = Github.snapshot(manifests)
-    Github.submit(snapshot)
-  }
+  def submit(ev: Evaluator): Task.Command[Unit] =
+    Task.Command(exclusive = true) {
+      val manifests = generate(ev)()
+      val snapshot = Github.snapshot(manifests)
+      Github.submit(snapshot)
+    }
 
   def generate(ev: Evaluator): Task.Command[Map[String, domain.Manifest]] =
     Task.Command(exclusive = true) {
