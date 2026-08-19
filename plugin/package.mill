@@ -9,6 +9,16 @@ object `package` extends _root_.build.CommonScalaModule
 
   override def artifactName = "mill-github-dependency-graph"
 
+  // The plugin compiles against the Mill API, so the published artifact is
+  // specific to a Mill binary platform. Mill plugins signal this with a
+  // `_mill<binaryPlatform>` suffix, giving `mill-github-dependency-graph_mill1_3`.
+  override def platformSuffix = "_mill1"
+
+  // Our own dependencies (upickle, requests, packageurl-java) are ordinary
+  // libraries and carry no `_mill1` suffix, so the platform-dependency check
+  // would flag every one of them.
+  override def resolvedDepsWarnNonPlatform = false
+
   override def moduleDeps = Seq(build.domain)
 
   override def compileMvnDeps = super.compileMvnDeps() ++ Seq(
