@@ -31,7 +31,7 @@ Add the plugin as a build dependency in your `build.mill.yaml`:
 ```yaml
 mill-build:
   mvnDeps:
-    - "io.eleven19.mill-github-dependency-graph::mill-github-dependency-graph_mill$MILL_BIN_PLATFORM:<version>"
+    - "io.eleven19.mill-github-dependency-graph::mill-github-dependency-graph_mill$MILL_BIN_PLATFORM:0.1.0"
 ```
 
 `$MILL_BIN_PLATFORM` is supplied by Mill and expands to the Mill binary
@@ -50,9 +50,11 @@ The plugin compiles against the Mill API, so its artifact carries the
 platform they target. The domain module has no Mill dependency and stays
 unsuffixed.
 
-> **Note:** the `_mill1` suffix starts with the first release published after
-> this change. Releases up to and including `0.0.2` are published without it,
-> as `mill-github-dependency-graph_3`.
+> **Upgrading from `0.0.x`:** the artifact id changed in `0.1.0`. Releases up
+> to and including `0.0.2` were published as `mill-github-dependency-graph_3`,
+> with no platform suffix. A build still pinned to the old coordinate will not
+> see `0.1.0` or anything after it, so the coordinate has to be updated, not
+> just the version.
 
 Browse on Sonatype Central:
 [mill-github-dependency-graph](https://central.sonatype.com/artifact/io.eleven19.mill-github-dependency-graph/mill-github-dependency-graph_mill1_3)
