@@ -1,6 +1,13 @@
 name: github-dependency-graph
 
 on:
+  # `push` is the trigger that matters: the snapshot should describe `main`.
+  # `workflow_dispatch` is the escape hatch. Without it this workflow has no
+  # way to be run by hand, which matters while push events are not firing on
+  # this repository — see the note in ci.yml. A `workflow_dispatch` trigger is
+  # only offered once the workflow is on the default branch, so this takes
+  # effect after it merges rather than from the pull request.
+  workflow_dispatch:
   push:
     branches:
       - main
