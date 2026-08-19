@@ -1,6 +1,6 @@
 # Mill GitHub Dependency Graph
 
-[![Maven Central](https://img.shields.io/maven-central/v/io.eleven19.mill-github-dependency-graph/mill-github-dependency-graph_3)](https://central.sonatype.com/artifact/io.eleven19.mill-github-dependency-graph/mill-github-dependency-graph_3)
+[![Maven Central](https://img.shields.io/maven-central/v/io.eleven19.mill-github-dependency-graph/mill-github-dependency-graph_mill1_3)](https://central.sonatype.com/artifact/io.eleven19.mill-github-dependency-graph/mill-github-dependency-graph_mill1_3)
 
 A [Mill](https://mill-build.org/) plugin to
 submit your dependency graph to GitHub via their [Dependency Submission
@@ -31,18 +31,31 @@ Add the plugin as a build dependency in your `build.mill.yaml`:
 ```yaml
 mill-build:
   mvnDeps:
-    - "io.eleven19.mill-github-dependency-graph::mill-github-dependency-graph:0.0.1"
+    - "io.eleven19.mill-github-dependency-graph::mill-github-dependency-graph_mill$MILL_BIN_PLATFORM:<version>"
 ```
+
+`$MILL_BIN_PLATFORM` is supplied by Mill and expands to the Mill binary
+platform you are building with (`1` for Mill 1.x), so the coordinate above
+resolves to `mill-github-dependency-graph_mill1_3`.
 
 ### Maven Coordinates
 
-| | Group ID | Artifact ID | Version |
-|---|---|---|---|
-| **Plugin** | `io.eleven19.mill-github-dependency-graph` | `mill-github-dependency-graph_3` | `0.0.1` |
-| **Domain** | `io.eleven19.mill-github-dependency-graph` | `github-dependency-graph-domain_3` | `0.0.1` |
+| | Group ID | Artifact ID |
+|---|---|---|
+| **Plugin** | `io.eleven19.mill-github-dependency-graph` | `mill-github-dependency-graph_mill1_3` |
+| **Domain** | `io.eleven19.mill-github-dependency-graph` | `github-dependency-graph-domain_3` |
+
+The plugin compiles against the Mill API, so its artifact carries the
+`_mill1` platform suffix that Mill plugins use to declare which Mill binary
+platform they target. The domain module has no Mill dependency and stays
+unsuffixed.
+
+> **Note:** the `_mill1` suffix starts with the first release published after
+> this change. Releases up to and including `0.0.2` are published without it,
+> as `mill-github-dependency-graph_3`.
 
 Browse on Sonatype Central:
-[mill-github-dependency-graph](https://central.sonatype.com/artifact/io.eleven19.mill-github-dependency-graph/mill-github-dependency-graph_3)
+[mill-github-dependency-graph](https://central.sonatype.com/artifact/io.eleven19.mill-github-dependency-graph/mill-github-dependency-graph_mill1_3)
 | [github-dependency-graph-domain](https://central.sonatype.com/artifact/io.eleven19.mill-github-dependency-graph/github-dependency-graph-domain_3)
 
 ## Usage
