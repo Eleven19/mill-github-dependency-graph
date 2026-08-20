@@ -19,7 +19,7 @@ trait GraphModule extends ExternalModule {
   // is only available in exclusive commands" on those accesses.
   def submit(
       ev: Evaluator,
-      scope: Option[String] = None,
+      scope: Option[GraphScope] = None,
       modules: Seq[String] = Nil,
       excludeModules: Seq[String] = Nil,
       output: Option[String] = None,
@@ -71,7 +71,7 @@ trait GraphModule extends ExternalModule {
     */
   def generate(
       ev: Evaluator,
-      scope: Option[String] = None,
+      scope: Option[GraphScope] = None,
       modules: Seq[String] = Nil,
       excludeModules: Seq[String] = Nil,
       output: Option[String] = None,
@@ -80,13 +80,6 @@ trait GraphModule extends ExternalModule {
     Task.Command(exclusive = true) {
       // Both argument checks run before any work. See `resolveOutput`.
       val destination = output.map(resolveOutput)
-
-      val parsedScope = scope.map { value =>
-        GraphScope.fromString(value) match {
-          case Right(parsed) => parsed
-          case Left(message) => throw new IllegalArgumentException(message)
-        }
-      }
 
       val discovered = Resolver.computeModules(ev)
 
@@ -144,7 +137,7 @@ trait GraphModule extends ExternalModule {
       val moduleTrees = Resolver.resolveModuleTrees(
         ev,
         selected,
-        parsedScope,
+        scope,
         includeModuleDeps = Option.when(noModuleDeps.value)(false)
       )
 
@@ -172,7 +165,7 @@ trait GraphModule extends ExternalModule {
     */
   def report(
       ev: Evaluator,
-      scope: Option[String] = None,
+      scope: Option[GraphScope] = None,
       modules: Seq[String] = Nil,
       excludeModules: Seq[String] = Nil,
       output: Option[String] = None,
@@ -205,7 +198,7 @@ trait GraphModule extends ExternalModule {
 
       val html = HtmlReport.render(
         summary = GraphSummary.from(manifests),
-        scope = scope.getOrElse("per-module"),
+        scope = scope.map(_.name).getOrElse("per-module"),
         selection = selection,
         manifests = manifests
       )
