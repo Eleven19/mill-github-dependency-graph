@@ -107,7 +107,7 @@ The plugin works in a few steps:
 
 1. Gather all the `JavaModule`s in your build
 2. Gather all direct and transitive dependencies of those modules, at the
-   runtime scope
+   chosen scope
 3. Create a tree-like structure of these dependencies using coursier's
    `DependencyTree` functionality
 4. Map this structure to a
@@ -117,14 +117,48 @@ The plugin works in a few steps:
 
 ### What the graph covers
 
-Each module is resolved at the Maven `runtime` scope. That scope contains the
-`compile` scope, so the graph holds every dependency you compile against and
-also the ones that only appear when the code runs: SLF4J bindings, JDBC
-drivers, most of the JUnit platform. These are the dependencies GitHub needs
-to alert you about, so they belong in the graph.
+By default each module is resolved at the Maven `runtime` scope. That scope
+contains the `compile` scope, so the graph holds every dependency you compile
+against and also the ones that only appear when the code runs: SLF4J bindings,
+JDBC drivers, most of the JUnit platform.
 
-`mvnDeps` and `runMvnDeps` are reported as direct dependencies.
-`compileMvnDeps` are provided-scope only and are not reported.
+Pass `--scope` to change it:
+
+| `--scope` | Covers |
+|---|---|
+| `compile` | `mvnDeps` and their compile-scope transitives |
+| `runtime` | the default; adds `runMvnDeps` and runtime-scope transitives |
+| `all` | adds `compileMvnDeps`, which are provided-scope |
+
+```sh
+./mill io.eleven19.mill.github.dependency.graph.Graph/generate --scope all
+```
+
+A single module can declare its own scope by mixing in `GraphScopeModule`:
+
+```scala
+import io.eleven19.mill.github.dependency.graph.{GraphScope, GraphScopeModule}
+
+object server extends ScalaModule with GraphScopeModule {
+  override def dependencyGraphScope = Task { GraphScope.All }
+}
+```
+
+A `--scope` passed on the command line overrides every module's declaration.
+
+### Choosing which modules to cover
+
+Every module in the build is covered by default. `--modules` and
+`--exclude-modules` take Mill selectors, the same ones every other Mill
+command accepts, and both are repeatable:
+
+```sh
+./mill io.eleven19.mill.github.dependency.graph.Graph/submit \
+  --exclude-modules '__.test' --exclude-modules 'mill-plugins.__'
+```
+
+`--exclude-modules` is applied after `--modules`. Whenever a filter drops
+anything, the run logs how many modules it covered out of how many it found.
 
 ### Limitations
 
