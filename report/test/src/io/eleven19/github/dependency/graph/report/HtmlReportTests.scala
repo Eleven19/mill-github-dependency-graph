@@ -139,6 +139,22 @@ object HtmlReportTests extends TestSuite {
       }
     }
 
+    test("expandable rows carry a visible disclosure marker") {
+      // `display: grid` on <summary> suppresses the native triangle, so
+      // without an explicit marker nothing on the page indicates that module
+      // and coordinate rows expand. Deleting the marker rule would leave half
+      // the report undiscoverable and every other test still green.
+      assert(html.contains(".row-summary > .cell:first-child::before"))
+      assert(
+        html.contains(
+          "details[open] > .row-summary > .cell:first-child::before"
+        )
+      )
+      // Collapsed and expanded must not render the same glyph.
+      assert(html.contains("\\25B8"))
+      assert(html.contains("\\25BE"))
+    }
+
     test("escapes content rather than injecting it") {
       // Coordinates come from POMs we do not control. scalatags escapes text
       // nodes by default; this asserts we did not reach for `raw` on them.

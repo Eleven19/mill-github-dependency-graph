@@ -200,6 +200,31 @@ object OutputTests extends TestSuite {
       }
 
       test(
+        "--output naming an existing directory fails, as it does on generate"
+      ) {
+        // Closes a gap the branch shipped with: `report` had its own copy of
+        // the guard and no test, so deleting it would have gone unnoticed on
+        // one of the two commands that carries it. Both now share one helper.
+        UnitTester(testBuild, null).scoped { eval =>
+          val destination = eval.outPath / "already-a-directory-for-report"
+          os.makeDir.all(destination)
+
+          eval.apply(
+            Graph.report(eval.evaluator, output = Some(destination.toString))
+          ) match {
+            case Left(failure) =>
+              val message = failure.toString
+              assert(message.contains("--output names an existing directory"))
+              assert(message.contains(destination.toString))
+            case Right(_) =>
+              throw new java.lang.AssertionError(
+                "expected report to fail when --output names a directory"
+              )
+          }
+        }
+      }
+
+      test(
         "no --output still writes somewhere, and the returned path exists"
       ) {
         UnitTester(testBuild, null).scoped { eval =>

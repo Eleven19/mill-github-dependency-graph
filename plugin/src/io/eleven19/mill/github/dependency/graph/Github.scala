@@ -16,7 +16,11 @@ import Writers._
   */
 object Github {
 
-  private val url = new URI(
+  // Lazy, not eager: `Env.githubApiUrl` throws when the Actions environment
+  // is absent, so an eager `val` here made merely *loading* this object fail
+  // outside CI — which meant nothing in it could be unit tested. The URI is
+  // only needed inside `submit`.
+  private lazy val url = new URI(
     s"${Env.githubApiUrl}/repos/${Env.githubRepository}/dependency-graph/snapshots"
   )
 
@@ -100,15 +104,31 @@ object Github {
     BuildInfo.version
   )
 
+  /** The link back to the Actions run that produced a snapshot.
+    *
+    * Takes its environment as a parameter rather than reading it directly, so
+    * a test can prove the variable *names* are right. They were not: this
+    * looked up `"$GITHUB_SERVER_URL"` with a literal `$`, which matches no
+    * variable, so the comprehension always yielded `None` and every snapshot
+    * we ever submitted went out with no `html_url` at all.
+    */
+  private[graph] def htmlUrl(
+      env: String => Option[String],
+      runId: String
+  ): Option[String] =
+    for {
+      serverUrl <- env("GITHUB_SERVER_URL")
+      repository <- env("GITHUB_REPOSITORY")
+    } yield s"$serverUrl/$repository/actions/runs/$runId"
+
   private lazy val githubJob: Job = {
     val correlator = s"${Env.githubJobName}_${Env.githubWorkflow}"
     val id = Env.githubRunId
-    val html_url =
-      for {
-        serverUrl <- Properties.envOrNone("$GITHUB_SERVER_URL")
-        repository <- Properties.envOrNone("GITHUB_REPOSITORY")
-      } yield s"$serverUrl/$repository/actions/runs/$id"
-    Job(id = id, correlator = correlator, html_url = html_url)
+    Job(
+      id = id,
+      correlator = correlator,
+      html_url = htmlUrl(Properties.envOrNone(_), id)
+    )
   }
 
   object Env {

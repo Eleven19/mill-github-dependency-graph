@@ -50,7 +50,7 @@ object ModuleSelectionIntegrationTests extends TestSuite {
             Fixtures.generate(tester, "--exclude-modules", "__.test")
           )
           val output = result.out + result.err
-          assert(output.contains("submitting 3 of 5 modules"))
+          assert(output.contains("covering 3 of 5 modules"))
           assert(output.contains("2 excluded by selector"))
         }
       }

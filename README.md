@@ -273,7 +273,7 @@ more than once.
 Whenever a filter drops anything, the run says so:
 
 ```
-submitting 3 of 5 modules, 2 excluded by selector
+covering 3 of 5 modules, 2 excluded by selector
 ```
 
 > **Think twice before excluding test modules.** It is the most common thing

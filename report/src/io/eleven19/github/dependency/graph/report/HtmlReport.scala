@@ -214,6 +214,15 @@ object HtmlReport {
       |.row:last-child { border-bottom: none; }
       |.row-summary { cursor: pointer; list-style: none; }
       |.row-summary::-webkit-details-marker { display: none; }
+      |/* `display: grid` on <summary> removes `display: list-item`, so the
+      |   native disclosure triangle never generates a box at all. Without an
+      |   explicit marker there is no cue that half the report's content --
+      |   every module's dependencies, every conflict's module list -- is one
+      |   click away. */
+      |.row-summary > .cell:first-child::before {
+      |  content: "\25B8"; display: inline-block; width: 1em; color: #666;
+      |}
+      |details[open] > .row-summary > .cell:first-child::before { content: "\25BE"; }
       |.row.conflict { background: #fff4e5; }
       |.row.conflict > .row-summary { border-left: 4px solid #c60; }
       |.cell.coord, .cell.name, .coord { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }

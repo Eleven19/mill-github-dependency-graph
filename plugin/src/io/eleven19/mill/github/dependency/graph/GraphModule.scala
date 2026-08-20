@@ -36,6 +36,23 @@ trait GraphModule extends ExternalModule {
       Github.submit(snapshot)
     }
 
+  /** Resolves an `--output` value to an absolute path, rejecting a directory.
+    *
+    * Shared by all three commands so they cannot disagree, and called *before*
+    * any resolution work: dependency resolution takes minutes and hits the
+    * network, and failing an argument check afterwards wastes a whole CI job
+    * for a mistake that was checkable in microseconds.
+    */
+  private def resolveOutput(path: String): os.Path = {
+    val destination = os.Path(path, BuildCtx.workspaceRoot)
+    if (os.isDir(destination))
+      throw new IllegalArgumentException(
+        s"--output names an existing directory: $destination. " +
+          "Give it a file path instead."
+      )
+    destination
+  }
+
   /** @param scope `compile`, `runtime` or `all`. Omitted, each module uses its
     *   own `GraphScopeModule.dependencyGraphScope`, defaulting to `runtime`.
     * @param modules Mill selectors naming the modules to cover. Omitted, every
@@ -55,6 +72,9 @@ trait GraphModule extends ExternalModule {
       output: Option[String] = None
   ): Task.Command[Map[String, domain.Manifest]] =
     Task.Command(exclusive = true) {
+      // Both argument checks run before any work. See `resolveOutput`.
+      val destination = output.map(resolveOutput)
+
       val parsedScope = scope.map { value =>
         GraphScope.fromString(value) match {
           case Right(parsed) => parsed
@@ -103,10 +123,12 @@ trait GraphModule extends ExternalModule {
 
       // Never let a filter shrink the graph quietly. A short manifest list
       // reads in the GitHub UI exactly like a project with few dependencies,
-      // so the count has to be stated.
+      // so the count has to be stated. "covering", not "submitting": this
+      // runs inside `generate`, which `report` also delegates to, and neither
+      // of those two commands submits anything.
       if (selected.size != discovered.size)
         Task.log.info(
-          s"submitting ${selected.size} of ${discovered.size} modules, " +
+          s"covering ${selected.size} of ${discovered.size} modules, " +
             s"${discovered.size - selected.size} excluded by selector"
         )
 
@@ -116,19 +138,13 @@ trait GraphModule extends ExternalModule {
       val manifests =
         moduleTrees.map(mt => (mt.module.toString(), mt.toManifest())).toMap
 
-      output.foreach { path =>
-        val destination = os.Path(path, BuildCtx.workspaceRoot)
-        if (os.isDir(destination))
-          throw new IllegalArgumentException(
-            s"--output names an existing directory: $destination. " +
-              "Give it a file path instead."
-          )
+      destination.foreach { path =>
         os.write.over(
-          destination,
+          path,
           upickle.default.write(manifests, indent = 2),
           createFolders = true
         )
-        Task.log.info(s"wrote $destination")
+        Task.log.info(s"wrote $path")
       }
 
       manifests
@@ -149,6 +165,10 @@ trait GraphModule extends ExternalModule {
       output: Option[String] = None
   ): Task.Command[String] =
     Task.Command(exclusive = true) {
+      // Before `generate`, which resolves every module: an existing-directory
+      // `--output` should fail in microseconds, not after minutes of work.
+      val chosen = output.map(resolveOutput)
+
       val manifests = generate(
         ev,
         scope = scope,
@@ -156,19 +176,9 @@ trait GraphModule extends ExternalModule {
         excludeModules = excludeModules
       )()
 
-      val destination = output match {
-        case Some(path) =>
-          val chosen = os.Path(path, BuildCtx.workspaceRoot)
-          if (os.isDir(chosen))
-            throw new IllegalArgumentException(
-              s"--output names an existing directory: $chosen. " +
-                "Give it a file path instead."
-            )
-          chosen
-        case None => Task.dest / "graph-report.html"
-      }
+      val destination = chosen.getOrElse(Task.dest / "graph-report.html")
 
-      // Mirrors `generate`'s own "submitting N of M modules" wording, so the
+      // Mirrors `generate`'s own "covering N of M modules" wording, so the
       // report's header states the same fact rather than a plain module
       // count that omits what a selector left out.
       val discoveredCount = Resolver.computeModules(ev).size
