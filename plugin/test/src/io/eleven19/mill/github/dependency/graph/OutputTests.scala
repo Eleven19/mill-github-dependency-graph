@@ -35,6 +35,23 @@ object OutputTests extends TestSuite {
     lazy val millDiscover = Discover[this.type]
   }
 
+  /** Two modules, so `--exclude-modules` has something to narrow away from
+    * something else. `testBuild` above only has one module, which is enough
+    * for scope and output-path coverage but cannot show a filter actually
+    * filtering: excluding the only module would empty the graph out and hit
+    * `generate`'s own "left no modules to report" guard instead.
+    */
+  object filterBuild extends TestRootModule {
+    object foo extends ScalaModule {
+      def scalaVersion = scala3
+    }
+    object bar extends ScalaModule {
+      def scalaVersion = scala3
+    }
+
+    lazy val millDiscover = Discover[this.type]
+  }
+
   val tests = Tests {
 
     test("--output <file> writes that file as JSON keyed by module names") {
@@ -230,6 +247,46 @@ object OutputTests extends TestSuite {
           ) match {
             case Right(_) =>
               assert(os.read(runtimeDestination).contains("slf4j-simple"))
+            case Left(failure) =>
+              throw new java.lang.AssertionError(s"report failed: $failure")
+          }
+        }
+      }
+
+      test(
+        "--exclude-modules drops that module's name from the report"
+      ) {
+        // Proves report() forwards `modules`/`excludeModules` to generate()
+        // rather than silently dropping them. `modules` and `excludeModules`
+        // are both `Seq[String]`, so a transposition of the two arguments in
+        // the call to generate() would still compile; only a test that
+        // exercises a filter's actual effect on the rendered output catches
+        // that.
+        UnitTester(filterBuild, null).scoped { eval =>
+          val fullDestination = eval.outPath / "full-report.html"
+          val filteredDestination = eval.outPath / "filtered-report.html"
+
+          eval.apply(
+            Graph
+              .report(eval.evaluator, output = Some(fullDestination.toString))
+          ) match {
+            case Right(_) =>
+              assert(os.read(fullDestination).contains("bar"))
+            case Left(failure) =>
+              throw new java.lang.AssertionError(s"report failed: $failure")
+          }
+
+          eval.apply(
+            Graph.report(
+              eval.evaluator,
+              excludeModules = Seq("bar.__"),
+              output = Some(filteredDestination.toString)
+            )
+          ) match {
+            case Right(_) =>
+              val html = os.read(filteredDestination)
+              assert(!html.contains("bar"))
+              assert(html.contains("foo"))
             case Left(failure) =>
               throw new java.lang.AssertionError(s"report failed: $failure")
           }
