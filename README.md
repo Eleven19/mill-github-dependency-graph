@@ -35,7 +35,7 @@ Add the plugin as a build dependency in your `build.mill.yaml`:
 ```yaml
 mill-build:
   mvnDeps:
-    - "io.eleven19.mill-github-dependency-graph::mill-github-dependency-graph_mill$MILL_BIN_PLATFORM:0.2.0"
+    - "io.eleven19.mill-github-dependency-graph::mill-github-dependency-graph_mill$MILL_BIN_PLATFORM:0.3.0"
 ```
 
 Check the Maven Central badge above for the current version — the coordinate
@@ -159,7 +159,7 @@ out of the box the plugin covers every module in your build, at runtime scope.
 | `--scope` | `compile`, `runtime`, `all` | unset — each module decides (see `dependencyGraphScope`) | How much of each module's dependency graph to report |
 | `--modules` | Mill selectors, repeatable | every module | Only cover the modules these selectors name |
 | `--exclude-modules` | Mill selectors, repeatable | nothing excluded | Drop modules, applied after `--modules` |
-| `--no-module-deps` | flag | off — module deps are included | Leave out dependencies reached through internal `moduleDeps` |
+| `--no-module-deps` | flag | off — module deps are included | Leave out dependencies reached through internal `moduleDeps` *(needs `0.3.0`)* |
 | `--output` | a file path | `generate`/`submit`: unset — nothing extra is written; only Mill's own `out/…/generate.json` exists. `report`: unset — the command's own `out/…/report.dest/graph-report.html` | `generate`/`submit`: also write the manifests as JSON to this path, as a copy — Mill's own `out/…/generate.json` is written either way. `report`: writes the HTML page to this path *instead of* its default location — no `report.dest/` is created. A relative path resolves against the workspace root for all three. |
 
 There is also one build-file setting:
@@ -225,7 +225,8 @@ object server extends ScalaModule with DependencyGraphModule {
 Modules that do not mix in the trait get the defaults: `GraphScope.Runtime`,
 and module deps included.
 
-> **`GraphScopeModule` was the old name** and still works, so builds written
+> **`DependencyGraphModule` needs `0.3.0`.** `GraphScopeModule` was the old name
+> and still works, so builds written
 > against `0.2.0` keep compiling. It is deprecated: it now means exactly
 > `DependencyGraphModule`, which also carries `includeModuleDeps`.
 
@@ -249,6 +250,8 @@ whole build, ignoring what individual modules asked for.
 
 ### Production or development
 
+*(needs `0.3.0`; earlier releases sent every node with no scope at all)*
+
 Every dependency is reported with a scope GitHub understands: `runtime` for
 things that ship, `development` for things needed only to build or test.
 
@@ -268,6 +271,8 @@ the runtime classpath, it ships, whatever else also pulls it in; understating
 that is the failure worth avoiding.
 
 ### `--no-module-deps` — dependencies from internal `moduleDeps`
+
+*(needs `0.3.0`; earlier releases left these out of the manifest entirely)*
 
 If `app` has `moduleDeps = Seq(lib)` and `lib` depends on Jackson, then
 anyone consuming `app` gets Jackson on their classpath — `app` never declared
