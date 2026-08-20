@@ -20,7 +20,7 @@ object `package` extends _root_.build.CommonScalaModule
   // would flag every one of them.
   override def resolvedDepsWarnNonPlatform = false
 
-  override def moduleDeps = Seq(build.domain)
+  override def moduleDeps = Seq(build.domain, build.report)
 
   override def compileMvnDeps = super.compileMvnDeps() ++ Seq(
     mvn"com.lihaoyi::mill-libs-scalalib:${mill.api.BuildInfo.millVersion}",

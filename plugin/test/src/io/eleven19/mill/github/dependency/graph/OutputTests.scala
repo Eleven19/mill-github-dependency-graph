@@ -20,9 +20,16 @@ object OutputTests extends TestSuite {
 
   private val scala3 = "3.3.4"
 
+  // `slf4j-simple` is filed as a `runMvnDeps`, which coursier resolves under
+  // the runtime configuration only -- so it is present in `foo`'s graph at
+  // `GraphScope.Runtime` and absent at `GraphScope.Compile`. That difference
+  // is what the `report` scope test below turns into an assertion.
+  private val slf4jVersion = "2.0.16"
+
   object testBuild extends TestRootModule {
     object foo extends ScalaModule {
       def scalaVersion = scala3
+      override def runMvnDeps = Seq(mvn"org.slf4j:slf4j-simple:$slf4jVersion")
     }
 
     lazy val millDiscover = Discover[this.type]
@@ -145,6 +152,87 @@ object OutputTests extends TestSuite {
             assert(os.read(sentinelPath) == "sentinel")
           case Left(failure) =>
             throw new java.lang.AssertionError(s"generate failed: $failure")
+        }
+      }
+    }
+
+    test("report") {
+
+      test(
+        "--output <file> writes a self-contained HTML report naming a module"
+      ) {
+        UnitTester(testBuild, null).scoped { eval =>
+          val destination = eval.outPath / "report.html"
+
+          eval.apply(
+            Graph.report(eval.evaluator, output = Some(destination.toString))
+          ) match {
+            case Right(result) =>
+              assert(os.exists(destination))
+              val html = os.read(destination)
+              assert(html.startsWith("<!DOCTYPE html>"))
+              assert(html.contains("foo"))
+
+              // report() must hand back the very path it wrote, not merely
+              // write to it.
+              assert(result.value == destination.toString)
+            case Left(failure) =>
+              throw new java.lang.AssertionError(s"report failed: $failure")
+          }
+        }
+      }
+
+      test(
+        "no --output still writes somewhere, and the returned path exists"
+      ) {
+        UnitTester(testBuild, null).scoped { eval =>
+          eval.apply(Graph.report(eval.evaluator)) match {
+            case Right(result) =>
+              val written = os.Path(result.value)
+              assert(os.exists(written))
+              assert(os.read(written).startsWith("<!DOCTYPE html>"))
+            case Left(failure) =>
+              throw new java.lang.AssertionError(s"report failed: $failure")
+          }
+        }
+      }
+
+      test(
+        "--scope compile omits a runMvnDeps entry that --scope runtime includes"
+      ) {
+        // Proves report() really funnels scope through generate()'s own
+        // resolution rather than resolving the graph a second, independent
+        // way: if report ever stopped calling generate and resolved on its
+        // own, nothing here would force the two scopes to differ.
+        UnitTester(testBuild, null).scoped { eval =>
+          val compileDestination = eval.outPath / "compile-report.html"
+          val runtimeDestination = eval.outPath / "runtime-report.html"
+
+          eval.apply(
+            Graph.report(
+              eval.evaluator,
+              scope = Some("compile"),
+              output = Some(compileDestination.toString)
+            )
+          ) match {
+            case Right(_) =>
+              assert(!os.read(compileDestination).contains("slf4j-simple"))
+            case Left(failure) =>
+              throw new java.lang.AssertionError(s"report failed: $failure")
+          }
+
+          eval.apply(
+            Graph.report(
+              eval.evaluator,
+              scope = Some("runtime"),
+              output = Some(runtimeDestination.toString)
+            )
+          ) match {
+            case Right(_) =>
+              assert(os.read(runtimeDestination).contains("slf4j-simple"))
+            case Left(failure) =>
+              throw new java.lang.AssertionError(s"report failed: $failure")
+          }
         }
       }
     }

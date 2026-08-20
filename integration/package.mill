@@ -31,10 +31,11 @@ object `package` extends _root_.build.CommonScalaModule {
     override def mainClass = Some("mill.launcher.MillLauncherMain")
   }
 
-  /** Plugin and domain published into one repository.
+  /** Plugin, domain and report published into one repository.
     *
-    * Both are needed: the plugin's POM depends on the domain artifact, so a
-    * repository holding only the plugin fails to resolve.
+    * All three are needed: the plugin's POM depends on both the domain and
+    * report artifacts, so a repository missing either fails to resolve the
+    * plugin at all.
     */
   def testRepo: T[PathRef] = Task {
     val repository = Task.dest / "repository"
@@ -46,7 +47,8 @@ object `package` extends _root_.build.CommonScalaModule {
     val orgRoot = build.plugin.pomSettings().organization.split('.').head
     Seq(
       build.plugin.publishLocalTestRepo(),
-      build.domain.publishLocalTestRepo()
+      build.domain.publishLocalTestRepo(),
+      build.report.publishLocalTestRepo()
     ).foreach { published =>
       os.copy.into(
         published.path / orgRoot,
