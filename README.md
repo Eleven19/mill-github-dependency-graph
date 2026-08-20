@@ -35,7 +35,7 @@ Add the plugin as a build dependency in your `build.mill.yaml`:
 ```yaml
 mill-build:
   mvnDeps:
-    - "io.eleven19.mill-github-dependency-graph::mill-github-dependency-graph_mill$MILL_BIN_PLATFORM:0.1.0"
+    - "io.eleven19.mill-github-dependency-graph::mill-github-dependency-graph_mill$MILL_BIN_PLATFORM:0.2.0"
 ```
 
 Check the Maven Central badge above for the current version — the coordinate
@@ -51,7 +51,7 @@ resolves to `mill-github-dependency-graph_mill1_3`.
 |---|---|---|
 | **Plugin** | `io.eleven19.mill-github-dependency-graph` | `mill-github-dependency-graph_mill1_3` |
 | **Domain** | `io.eleven19.mill-github-dependency-graph` | `github-dependency-graph-domain_3` |
-| **Report** | `io.eleven19.mill-github-dependency-graph` | `github-dependency-graph-report_3` *(first published in the release after `0.1.0`)* |
+| **Report** | `io.eleven19.mill-github-dependency-graph` | `github-dependency-graph-report_3` *(new in `0.2.0`)* |
 
 The plugin compiles against the Mill API, so its artifact carries the
 `_mill1` platform suffix that Mill plugins use to declare which Mill binary
@@ -67,6 +67,7 @@ and stay unsuffixed.
 Browse on Sonatype Central:
 [mill-github-dependency-graph](https://central.sonatype.com/artifact/io.eleven19.mill-github-dependency-graph/mill-github-dependency-graph_mill1_3)
 | [github-dependency-graph-domain](https://central.sonatype.com/artifact/io.eleven19.mill-github-dependency-graph/github-dependency-graph-domain_3)
+| [github-dependency-graph-report](https://central.sonatype.com/artifact/io.eleven19.mill-github-dependency-graph/github-dependency-graph-report_3)
 
 ## Getting started
 
@@ -137,19 +138,18 @@ browser. Like `generate`, it never contacts GitHub:
 ./mill io.eleven19.mill.github.dependency.graph.Graph/report
 ```
 
-> `report`, and `--output` on any command, are newer than the latest
-> release, `0.1.0`. If `Graph/report` fails with `Cannot resolve report`,
-> your pinned coordinate predates it — bump the version in
-> `build.mill.yaml` once a release containing it is out.
+> `report`, and `--output` on any command, need `0.2.0` or later. If
+> `Graph/report` fails with `Cannot resolve report`, your pinned coordinate
+> predates it — bump the version in `build.mill.yaml`.
 
 See [HTML report](#html-report) for what is on the page.
 
 ## Configuration
 
-> **These options — and `Graph/report` itself — need a release newer than
-> `0.1.0`.** If `--scope` gives you `Unknown arguments: "--scope"`, or
-> `Graph/report` gives you `Cannot resolve report`, your pinned plugin
-> predates them — bump the coordinate in `build.mill.yaml`.
+> **These options — and `Graph/report` itself — need `0.2.0` or later.** If
+> `--scope` gives you `Unknown arguments: "--scope"`, or `Graph/report` gives
+> you `Cannot resolve report`, your pinned plugin predates them — bump the
+> version in `build.mill.yaml`.
 
 All three commands accept the same four options. You need none of them to start:
 out of the box the plugin covers every module in your build, at runtime scope.
