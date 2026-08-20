@@ -1,0 +1,29 @@
+package build.report
+
+import mill._, scalalib._
+import mill.scalalib.scalafmt.ScalafmtModule
+
+/** Renders a dependency graph as a human-readable report.
+  *
+  * This module deliberately has no Mill dependency. Its inputs are the
+  * `domain` manifests, its output is a string, and its tests are plain utest
+  * with no build harness — which is what makes iterating on markup a
+  * seconds-long loop rather than a minutes-long one.
+  */
+object `package` extends _root_.build.CommonScalaModule
+    with _root_.build.PublishSupport {
+
+  override def artifactName = "github-dependency-graph-report"
+
+  override def moduleDeps = Seq(build.domain)
+
+  override def mvnDeps = super.mvnDeps() ++ Seq(
+    mvn"com.lihaoyi::scalatags:0.13.1"
+  )
+
+  object test extends ScalaTests with TestModule.Utest with ScalafmtModule {
+    override def mvnDeps = super.mvnDeps() ++ Seq(
+      mvn"com.lihaoyi::utest:0.9.5"
+    )
+  }
+}

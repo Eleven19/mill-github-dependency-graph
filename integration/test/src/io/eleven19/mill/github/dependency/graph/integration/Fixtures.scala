@@ -83,11 +83,28 @@ object Fixtures {
   private val generateSelector =
     "io.eleven19.mill.github.dependency.graph.Graph/generate"
 
+  private val reportSelector =
+    "io.eleven19.mill.github.dependency.graph.Graph/report"
+
+  private def run(
+      selector: String,
+      tester: IntegrationTester,
+      args: Seq[String]
+  ): IntegrationTester.EvalResult =
+    tester.eval(Seq(selector) ++ args, env = env)
+
   def generate(
       tester: IntegrationTester,
       args: String*
   ): IntegrationTester.EvalResult =
-    tester.eval(Seq(generateSelector) ++ args, env = env)
+    run(generateSelector, tester, args)
+
+  /** Runs `Graph/report`, the HTML-report sibling of `generate`. */
+  def report(
+      tester: IntegrationTester,
+      args: String*
+  ): IntegrationTester.EvalResult =
+    run(reportSelector, tester, args)
 
   /** Fails with the subprocess's full output.
     *
