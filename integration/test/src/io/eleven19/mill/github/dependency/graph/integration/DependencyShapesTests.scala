@@ -179,5 +179,61 @@ object DependencyShapesTests extends TestSuite {
         }
       }
     }
+
+    test("--output") {
+
+      test("generate --output writes the manifests as JSON") {
+        Fixtures.withFixture("dependency-shapes") { tester =>
+          val destination = tester.workspacePath / "generate-report.json"
+          Fixtures.requireSuccess(
+            Fixtures.generate(tester, "--output", destination.toString)
+          )
+          val content = os.read(destination)
+          // Fails loudly, with the offending content, if `--output` wrote
+          // something that is not valid JSON -- rather than a downstream
+          // assertion failing on a symptom of that.
+          val parsed =
+            try ujson.read(content)
+            catch {
+              case e: Exception =>
+                throw new java.lang.AssertionError(
+                  s"--output did not write valid JSON: $content",
+                  e
+                )
+            }
+          assert(parsed.obj.contains("viaDepManagement"))
+          assert(content.contains("dev.zio:zio-test_3:2.1.14"))
+        }
+      }
+
+      test("report --output writes a self-contained HTML page") {
+        Fixtures.withFixture("dependency-shapes") { tester =>
+          val destination = tester.workspacePath / "graph-report.html"
+          Fixtures.requireSuccess(
+            Fixtures.report(tester, "--output", destination.toString)
+          )
+          val content = os.read(destination)
+          assert(content.startsWith("<!DOCTYPE html>"))
+          assert(content.contains("dev.zio:zio-test_3:2.1.14"))
+        }
+      }
+
+      test("the rendered report carries no http:// or https:// reference") {
+        // The unit tier (`report/test`) already asserts this on markup
+        // rendered in-process. Asserting it again here, on the file the
+        // real command wrote after publish, resolve and subprocess, is what
+        // would actually catch a stray asset reference: nothing upstream of
+        // this assertion is stubbed.
+        Fixtures.withFixture("dependency-shapes") { tester =>
+          val destination = tester.workspacePath / "graph-report-urls.html"
+          Fixtures.requireSuccess(
+            Fixtures.report(tester, "--output", destination.toString)
+          )
+          val content = os.read(destination)
+          assert(!content.contains("http://"))
+          assert(!content.contains("https://"))
+        }
+      }
+    }
   }
 }
