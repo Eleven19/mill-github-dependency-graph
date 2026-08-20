@@ -128,11 +128,14 @@ object HtmlReportTests extends TestSuite {
       }
 
       test("explains what a conflict means") {
-        // The brief requires this be stated plainly on the panel, because
-        // the first reaction to a marked row is otherwise "is this a bug in
-        // the plugin?". Anchored on a distinctive phrase from the sentence,
-        // not the whole thing, so minor copy-editing does not break it.
-        assert(html.contains("Coursier has already reconciled"))
+        // The brief requires this be stated plainly on the panel: a
+        // conflict is one coordinate at more than one version *across
+        // modules*. "Coursier has already reconciled" alone is boilerplate
+        // that survives even if that module-boundary clause is deleted --
+        // review confirmed mutating out `strong("across modules")` left
+        // this test green. Anchor on the load-bearing clause itself.
+        assert(html.contains("more than one version"))
+        assert(html.contains("across modules"))
       }
     }
 
