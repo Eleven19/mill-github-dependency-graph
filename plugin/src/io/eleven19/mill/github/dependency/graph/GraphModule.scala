@@ -22,7 +22,12 @@ trait GraphModule extends ExternalModule {
       excludeModules: Seq[String] = Nil
   ): Task.Command[Unit] =
     Task.Command(exclusive = true) {
-      val manifests = generate(ev, scope, modules, excludeModules)()
+      val manifests = generate(
+        ev,
+        scope = scope,
+        modules = modules,
+        excludeModules = excludeModules
+      )()
       val snapshot = Github.snapshot(manifests)
       Github.submit(snapshot)
     }
@@ -51,25 +56,10 @@ trait GraphModule extends ExternalModule {
       val discovered = Resolver.computeModules(ev)
 
       val include = Option.when(modules.nonEmpty) {
-        val owning = ModuleSelection.owningModules(
+        ModuleSelection.owningModules(
           discovered,
           EvaluatorBridge.resolveSegments(ev, modules)
         )
-
-        // `owningModules` can legitimately come back empty: the selectors
-        // resolved to real Mill tasks (`resolveSegments` already guards
-        // against selectors that match nothing), but none of those tasks
-        // belong to a `JavaModule`. Left unchecked, `include` becomes
-        // `Some(Set.empty)`, `ModuleSelection.select` honours it faithfully,
-        // and every module is filtered out. The command would then submit an
-        // empty graph, which reads in the GitHub UI exactly like a project
-        // with no dependencies.
-        if (owning.isEmpty)
-          throw new IllegalArgumentException(
-            s"--modules ${modules.mkString(", ")} named no JavaModule."
-          )
-
-        owning
       }
       val exclude =
         if (excludeModules.isEmpty) Set.empty[List[String]]
@@ -80,6 +70,27 @@ trait GraphModule extends ExternalModule {
           )
 
       val selected = ModuleSelection.select(discovered, include, exclude)
+
+      // Never let a filter, in either direction, empty the graph out from
+      // under the caller. `--modules` naming no JavaModule and
+      // `--exclude-modules` naming every module both land here: `include`
+      // or `exclude` end up excluding everything, and `select` honours that
+      // faithfully. GitHub's Dependency Submission API keys the snapshot on
+      // a correlator that stays stable per workflow/job, so an empty
+      // submission is not ignored — it REPLACES the repository's previously
+      // submitted dependency graph with nothing. Only an `info` log line
+      // would otherwise signal it.
+      if (selected.isEmpty && discovered.nonEmpty)
+        throw new IllegalArgumentException(
+          "The selectors given left no modules to report. " +
+            s"--modules ${
+                if (modules.isEmpty) "(none)" else modules.mkString(", ")
+              }; " +
+            s"--exclude-modules ${
+                if (excludeModules.isEmpty) "(none)"
+                else excludeModules.mkString(", ")
+              }."
+        )
 
       // Never let a filter shrink the graph quietly. A short manifest list
       // reads in the GitHub UI exactly like a project with few dependencies,
