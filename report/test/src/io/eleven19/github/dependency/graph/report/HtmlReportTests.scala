@@ -86,8 +86,12 @@ object HtmlReportTests extends TestSuite {
       }
 
       test("reports the conflict count") {
-        // jackson-core appears at 2.15.0 and 2.18.2.
-        assert(html.toLowerCase.contains("conflict"))
+        // jackson-core appears at 2.15.0 and 2.18.2. Anchored on the same
+        // `data-stat` marker as the other counters: `contains("conflict")`
+        // alone can never fail, since that substring also lives in static
+        // CSS class names, the "Version conflicts" label, and the
+        // explanation note -- present even on the empty-graph fixture.
+        assert(html.contains("data-stat=\"conflicts\">1<"))
       }
     }
 
@@ -112,6 +116,23 @@ object HtmlReportTests extends TestSuite {
       test("shows every version a coordinate was seen at") {
         assert(html.contains("2.15.0"))
         assert(html.contains("2.18.2"))
+      }
+
+      test("marks a conflicting row") {
+        // jackson-core is the only coordinate at more than one version; its
+        // row carries the "conflict" class alongside the plain "row" class
+        // every row gets, so a later restyle can rename or move the visual
+        // treatment without this test caring, but cannot delete the marker
+        // outright without going red.
+        assert(html.contains("class=\"row conflict\""))
+      }
+
+      test("explains what a conflict means") {
+        // The brief requires this be stated plainly on the panel, because
+        // the first reaction to a marked row is otherwise "is this a bug in
+        // the plugin?". Anchored on a distinctive phrase from the sentence,
+        // not the whole thing, so minor copy-editing does not break it.
+        assert(html.contains("Coursier has already reconciled"))
       }
     }
 
