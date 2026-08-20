@@ -111,15 +111,28 @@ object Fixtures {
   private val submitSelector =
     "io.eleven19.mill.github.dependency.graph.Graph/submit"
 
-  /** `submit` cannot succeed outside GitHub Actions — it needs a token and the
-    * run's identity. It still writes `--output` first, which is the part worth
-    * covering.
+  /** Runs `submit` with its API endpoint pointed at a closed local port, so
+    * the POST cannot leave the machine.
+    *
+    * Never call `submit` in a test without this. Inside GitHub Actions every
+    * `GITHUB_*` variable is set and `ci.yml` exports `GITHUB_TOKEN`, and
+    * `IntegrationTester` propagates the environment — so a test that merely
+    * assumes "this cannot succeed here" will submit a real dependency
+    * snapshot for this repository. An earlier version of this helper did
+    * exactly that: the fixture's dependencies were accepted by the API under
+    * the `integration_ci` correlator.
+    *
+    * Port 1 refuses connections, so `submit` fails at the POST — after
+    * `generate` has written `--output`, which is what these tests assert on.
     */
-  def submit(
+  def submitWithoutReachingGitHub(
       tester: IntegrationTester,
       args: String*
   ): IntegrationTester.EvalResult =
-    run(submitSelector, tester, args)
+    tester.eval(
+      Seq(submitSelector) ++ args,
+      env = env ++ Map("GITHUB_API_URL" -> "http://127.0.0.1:1")
+    )
 
   private val reportSelector =
     "io.eleven19.mill.github.dependency.graph.Graph/report"

@@ -224,12 +224,21 @@ object DependencyShapesTests extends TestSuite {
       test("submit --output writes the manifests before it tries to POST") {
         // `submit` gained `--output` with no coverage at any tier. Twice on
         // this project a forwarded parameter has been silently dropped with
-        // every test still green, so it is worth a case even though `submit`
-        // itself cannot succeed here: with no GitHub credentials it fails at
-        // the POST, and the file `generate` already wrote is the assertion.
+        // every test still green, so it is worth a case.
+        //
+        // The POST is deliberately sent nowhere. An earlier version of this
+        // test assumed `submit` could not succeed for want of credentials —
+        // true on a laptop, false in CI, where Actions supplies every
+        // `GITHUB_*` variable and `ci.yml` supplies the token. It really
+        // submitted a snapshot. See `submitWithoutReachingGitHub`.
         Fixtures.withFixture("dependency-shapes") { tester =>
           val destination = tester.workspacePath / "submitted.json"
-          val result = Fixtures.submit(tester, "--output", destination.toString)
+          val result =
+            Fixtures.submitWithoutReachingGitHub(
+              tester,
+              "--output",
+              destination.toString
+            )
 
           assert(!result.isSuccess)
           assert(os.exists(destination))
