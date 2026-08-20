@@ -1,0 +1,57 @@
+//| mvnDeps:
+//| - io.eleven19.mill-github-dependency-graph::mill-github-dependency-graph_mill$MILL_BIN_PLATFORM:@PLUGIN_VERSION@
+
+package build
+
+import mill._, scalalib._
+
+// Each module below is one dependency shape the plugin has had to get right.
+// They are deliberately small: the point is the shape, not the size.
+
+trait Fixture extends ScalaModule {
+  def scalaVersion = "3.3.4"
+}
+
+/** Issue #3: the version lives in `depManagement`, not at the use site. */
+object viaDepManagement extends Fixture {
+  override def depManagement = super.depManagement() ++ Seq(
+    mvn"dev.zio::zio-test:2.1.14"
+  )
+  override def mvnDeps = Seq(mvn"dev.zio::zio-test")
+}
+
+/** Issue #3: the version comes from a BOM. */
+object viaBom extends Fixture {
+  override def bomMvnDeps = Seq(
+    mvn"com.fasterxml.jackson:jackson-bom:2.18.2"
+  )
+  override def mvnDeps = Seq(mvn"com.fasterxml.jackson.core:jackson-databind")
+}
+
+/** The BOM raises transitive versions above what the POM asked for. */
+object bomOverridesTransitive extends Fixture {
+  override def bomMvnDeps = Seq(
+    mvn"com.fasterxml.jackson:jackson-bom:2.18.2"
+  )
+  override def mvnDeps = Seq(
+    mvn"com.fasterxml.jackson.core:jackson-databind:2.15.0"
+  )
+}
+
+/** Issue #12: `junit-platform-suite-engine` declares
+  * `junit-platform-suite-commons` at runtime scope.
+  */
+object runtimeScoped extends Fixture {
+  override def mvnDeps = Seq(
+    mvn"org.junit.platform:junit-platform-suite-engine:1.11.4"
+  )
+}
+
+/** One dependency in each of the three places a scope can pick from. */
+object everyScope extends Fixture {
+  override def mvnDeps = Seq(
+    mvn"org.junit.platform:junit-platform-suite-engine:1.11.4"
+  )
+  override def runMvnDeps = Seq(mvn"org.slf4j:slf4j-simple:2.0.16")
+  override def compileMvnDeps = Seq(mvn"org.projectlombok:lombok:1.18.36")
+}

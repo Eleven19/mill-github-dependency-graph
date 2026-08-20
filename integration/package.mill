@@ -1,0 +1,91 @@
+package build.integration
+
+import mill._, scalalib._
+import mill.scalalib.scalafmt._
+
+/** Integration tier: publishes the plugin to a local repository and runs
+  * fixture projects against it with a real Mill process.
+  *
+  * `plugin.test` stays the fast inner loop. This tier proves what that one
+  * structurally cannot: that the published coordinate resolves, that the
+  * command line flags parse, and that the traits are usable from a consumer
+  * build file.
+  *
+  * This lives in its own `package.mill` rather than being appended to the
+  * root `package.mill`: the root build file compiles before any of its
+  * children, so it cannot reference `build.plugin` or `build.domain` by
+  * name. Living alongside `plugin/` and `domain/` as a sibling module lets
+  * it reference both, the same way `plugin/package.mill` already references
+  * `build.domain`.
+  */
+object `package` extends _root_.build.CommonScalaModule {
+
+  // No sources of its own; it exists to hold the fixtures and the launcher.
+  override def sources = Task.Sources()
+
+  /** The Mill executable the fixture projects run under. */
+  object millExecutable extends JavaModule {
+    override def mvnDeps = Seq(
+      mvn"com.lihaoyi:mill-runner-launcher_3:${mill.api.BuildInfo.millVersion}"
+    )
+    override def mainClass = Some("mill.launcher.MillLauncherMain")
+  }
+
+  /** Plugin and domain published into one repository.
+    *
+    * Both are needed: the plugin's POM depends on the domain artifact, so a
+    * repository holding only the plugin fails to resolve.
+    */
+  def testRepo: T[PathRef] = Task {
+    val repository = Task.dest / "repository"
+    os.makeDir.all(repository)
+    Seq(
+      build.plugin.publishLocalTestRepo(),
+      build.domain.publishLocalTestRepo()
+    ).foreach { published =>
+      os.copy.into(
+        published.path / "io",
+        repository,
+        followLinks = true,
+        replaceExisting = true,
+        copyAttributes = true,
+        createFolders = true,
+        mergeFolders = true
+      )
+    }
+    PathRef(repository)
+  }
+
+  /** Everything the tests need that is not a fixture: the launcher and the
+    * repository, in one directory so the tests can find one and derive the
+    * other.
+    */
+  def testInputs: T[PathRef] = Task {
+    val root = Task.dest / "integration-inputs"
+    os.makeDir.all(root)
+    os.copy(testRepo().path, root / "repository", createFolders = true)
+    os.copy.over(millExecutable.assembly().path, root / "mill-executable.jar")
+    PathRef(root)
+  }
+
+  object test extends ScalaTests with TestModule.Utest with ScalafmtModule {
+
+    override def resources = Task {
+      super.resources() ++ Seq(testInputs())
+    }
+
+    override def mvnDeps = super.mvnDeps() ++ Seq(
+      mvn"com.lihaoyi::mill-testkit:${mill.api.BuildInfo.millVersion}",
+      mvn"com.lihaoyi::utest:0.9.5"
+    )
+
+    /** The fixture build headers carry a `@PLUGIN_VERSION@` placeholder that
+      * the tests rewrite, so the tests need the version that was published.
+      */
+    override def forkEnv = Task {
+      super.forkEnv() ++ Map(
+        "PLUGIN_VERSION" -> build.plugin.publishVersion()
+      )
+    }
+  }
+}
