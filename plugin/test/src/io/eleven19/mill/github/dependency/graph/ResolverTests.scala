@@ -25,6 +25,7 @@ object ResolverTests extends TestSuite {
   private val zioVersion = "2.1.14"
   private val jacksonBomVersion = "2.18.2"
   private val jacksonPinnedVersion = "2.15.0"
+  private val junitPlatformVersion = "1.11.4"
 
   object testBuild extends TestRootModule {
 
@@ -65,6 +66,19 @@ object ResolverTests extends TestSuite {
       )
     }
 
+    /** A transitive that only exists at runtime scope.
+      *
+      * `junit-platform-suite-engine` declares `junit-platform-suite-commons`
+      * with `<scope>runtime</scope>`, so it is reachable through the runtime
+      * configuration and not through the compile one.
+      */
+    object viaRuntimeScope extends ScalaModule {
+      def scalaVersion = scala3
+      override def mvnDeps = Seq(
+        mvn"org.junit.platform:junit-platform-suite-engine:$junitPlatformVersion"
+      )
+    }
+
     lazy val millDiscover = Discover[this.type]
   }
 
@@ -98,6 +112,7 @@ object ResolverTests extends TestSuite {
   private lazy val bomOverridesTransitive = manifestOf(
     testBuild.bomOverridesTransitive
   )
+  private lazy val viaRuntimeScope = manifestOf(testBuild.viaRuntimeScope)
 
   private def directOf(manifest: domain.Manifest): Set[String] =
     manifest.resolved.filter(_._2.isDirectDependency).keySet
@@ -188,6 +203,41 @@ object ResolverTests extends TestSuite {
       }
     }
 
+    test("a runtime-scoped transitive") {
+
+      test("does not abort the manifest") {
+        // The synthetic coursier project is resolved at one configuration
+        // while the tree roots are walked at another, the tree spans nodes
+        // the resolution never reconciled, and coursier throws
+        // "Cannot find ... in reconciled versions" out of `DependencyTree`.
+        assert(viaRuntimeScope.resolved.nonEmpty)
+      }
+
+      test("reaches the manifest as indirect") {
+        assert(
+          indirectOf(viaRuntimeScope).contains(
+            s"org.junit.platform:junit-platform-suite-commons:$junitPlatformVersion"
+          )
+        )
+      }
+
+      test("still reports the compile-scoped transitives") {
+        // The runtime configuration pulls the compile one in as well, so
+        // widening to runtime must not cost us any compile-scope node.
+        val indirect = indirectOf(viaRuntimeScope)
+        assert(
+          indirect.contains(
+            s"org.junit.platform:junit-platform-engine:$junitPlatformVersion"
+          )
+        )
+        assert(
+          indirect.contains(
+            s"org.junit.platform:junit-platform-suite-api:$junitPlatformVersion"
+          )
+        )
+      }
+    }
+
     test("every JavaModule in the build is discovered") {
       // Guards `computeModules` independently of resolution, so a resolution
       // failure cannot be mistaken for a discovery failure.
@@ -198,7 +248,8 @@ object ResolverTests extends TestSuite {
         discovered == Set(
           "viaDepManagement",
           "viaBom",
-          "bomOverridesTransitive"
+          "bomOverridesTransitive",
+          "viaRuntimeScope"
         )
       )
     }
