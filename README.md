@@ -128,7 +128,7 @@ Pass `--scope` to change it:
 |---|---|
 | `compile` | `mvnDeps` and their compile-scope transitives |
 | `runtime` | the default; adds `runMvnDeps` and runtime-scope transitives |
-| `all` | adds `compileMvnDeps`, which are provided-scope |
+| `all` | adds `compileMvnDeps`, which are provided-scope. There is no separate scope for test dependencies: Mill maps `test` to the same set as `runtime`, so it is covered by `runtime` and `all` already. |
 
 ```sh
 ./mill io.eleven19.mill.github.dependency.graph.Graph/generate --scope all
@@ -150,15 +150,44 @@ A `--scope` passed on the command line overrides every module's declaration.
 
 Every module in the build is covered by default. `--modules` and
 `--exclude-modules` take Mill selectors, the same ones every other Mill
-command accepts, and both are repeatable:
+command accepts, and both are repeatable.
+
+`--modules` narrows the graph down to the modules a selector names:
 
 ```sh
+./mill io.eleven19.mill.github.dependency.graph.Graph/generate --modules 'app'
+```
+
+`--modules 'app'` covers only `app` itself. `--modules 'app.__'` covers `app`
+*and* everything nested under it -- this distinction had to be settled
+empirically, since `app` alone does not imply its descendants the way a
+directory path might suggest.
+
+`--exclude-modules` drops modules instead, and is applied after `--modules`:
+
+```sh
+# Illustrative: this only excludes something if your build actually has a
+# module tree named `mill-plugins`.
 ./mill io.eleven19.mill.github.dependency.graph.Graph/submit \
   --exclude-modules '__.test' --exclude-modules 'mill-plugins.__'
 ```
 
-`--exclude-modules` is applied after `--modules`. Whenever a filter drops
-anything, the run logs how many modules it covered out of how many it found.
+Whenever a filter drops anything, the run logs how many modules it covered
+out of how many it found.
+
+Two things to know about selector matching:
+
+- **A selector that matches no Mill task is a hard error.** `generate` and
+  `submit` both fail rather than silently submitting fewer modules (or, in
+  the worst case, an empty graph). This means a CI job pinned to a selector
+  starts failing the day the module it names is deleted or renamed, rather
+  than quietly submitting less than you think.
+- **Matching is literal on a selector's final segment.** `__.test` matches
+  modules whose *last* segment is exactly `test`; it does not match `itest`,
+  `testing`, or `tests`. This is not a minor distinction: on the real
+  157-module `finos/morphir-scala` build, `--exclude-modules '__.test'`
+  drops 61 modules, taking the count from 157 manifests down to 96 -- not 88,
+  which is what you would get if `test` anywhere in the name counted.
 
 ### Limitations
 
