@@ -1,6 +1,7 @@
 package io.eleven19.mill.github.dependency.graph
 
 import io.eleven19.github.dependency.graph.domain
+import io.eleven19.github.dependency.graph.domain.DependencyScope
 import mill._
 import mill.api.Discover
 import mill.scalalib._
@@ -139,6 +140,19 @@ object ResolverTests extends TestSuite {
       override def mvnDeps = Seq(mvn"org.slf4j:slf4j-api:$slf4jVersion")
     }
 
+    /** A `TestModule`. Nothing it pulls in ships, so everything in its
+      * manifest is a development dependency.
+      */
+    object hasTests extends ScalaModule {
+      def scalaVersion = scala3
+      override def mvnDeps = Seq(mvn"org.slf4j:slf4j-api:$slf4jVersion")
+      object test extends ScalaTests with TestModule.Utest {
+        override def mvnDeps = super.mvnDeps() ++ Seq(
+          mvn"com.lihaoyi::sourcecode:$sourcecodeVersion"
+        )
+      }
+    }
+
     lazy val millDiscover = Discover[this.type]
   }
 
@@ -208,7 +222,7 @@ object ResolverTests extends TestSuite {
           allMvnDeps = bound(module.allMvnDeps()),
           runMvnDeps = bound(module.runMvnDeps()),
           compileMvnDeps = bound(module.compileMvnDeps())
-        ).trees
+        ).roots.map(_._1)
       }
 
       eval.apply(toRoots) match {
@@ -539,6 +553,57 @@ object ResolverTests extends TestSuite {
       }
     }
 
+    test("dependency scope") {
+
+      test("an ordinary module's dependencies are runtime") {
+        val resolved = manifestOf(testBuild.hasTests).resolved
+        val own = s"org.slf4j:slf4j-api:$slf4jVersion"
+        assert(resolved(own).scope == Some(DependencyScope.runtime))
+      }
+
+      test("a test module's dependencies are development") {
+        // Nothing a test module pulls in ships, whatever scope it was
+        // declared at, so the whole manifest is development.
+        val resolved = manifestOf(testBuild.hasTests.test).resolved
+        assert(resolved(sourcecode).scope == Some(DependencyScope.development))
+      }
+
+      test("a test module's inherited dependencies are development too") {
+        // `hasTests.test` reaches slf4j through its moduleDeps edge to
+        // `hasTests`. In *that* manifest it is still a development
+        // dependency: it is there to run tests.
+        val resolved = manifestOf(testBuild.hasTests.test).resolved
+        val inherited = s"org.slf4j:slf4j-api:$slf4jVersion"
+        assert(resolved.contains(inherited))
+        assert(resolved(inherited).scope == Some(DependencyScope.development))
+      }
+
+      test("compileMvnDeps are development under --scope all") {
+        // They are needed to build and never ship.
+        val resolved =
+          manifestOf(testBuild.everyScope, Some(GraphScope.All)).resolved
+        val lombok = s"org.projectlombok:lombok:$lombokVersion"
+        assert(resolved(lombok).scope == Some(DependencyScope.development))
+      }
+
+      test("runtime dependencies stay runtime under --scope all") {
+        // The same manifest carries both kinds; the provided ones must not
+        // drag the rest down with them.
+        val resolved =
+          manifestOf(testBuild.everyScope, Some(GraphScope.All)).resolved
+        val slf4j = s"org.slf4j:slf4j-simple:$slf4jVersion"
+        assert(resolved(slf4j).scope == Some(DependencyScope.runtime))
+      }
+
+      test("scope is always stated, never left absent") {
+        // It used to be hardcoded `None` on every node, so GitHub could not
+        // tell a production dependency from a build-time one.
+        val resolved =
+          manifestOf(testBuild.everyScope, Some(GraphScope.All)).resolved
+        assert(resolved.values.forall(_.scope.isDefined))
+      }
+    }
+
     test("every JavaModule in the build is discovered") {
       // Guards `computeModules` independently of resolution, so a resolution
       // failure cannot be mistaken for a discovery failure.
@@ -555,7 +620,9 @@ object ResolverTests extends TestSuite {
           "declaresCompile",
           "lib",
           "app",
-          "appOptedOut"
+          "appOptedOut",
+          "hasTests",
+          "hasTests.test"
         )
       )
     }

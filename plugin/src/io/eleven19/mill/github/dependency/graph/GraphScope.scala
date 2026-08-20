@@ -75,6 +75,21 @@ object GraphScope {
           values.map(_.name).mkString(", ") + "."
       )
 
+  /** Lets `--scope` be typed rather than validated by hand.
+    *
+    * It lives here, in the companion, so it is found without an import
+    * wherever `GraphScope` appears in a command signature. With it, mainargs
+    * reports a bad value as an argument error and lists the valid ones in
+    * `--help`; without it the command body had to throw, which reached the
+    * user as a Java stack trace.
+    */
+  implicit val tokensReader: mainargs.TokensReader.Simple[GraphScope] =
+    new mainargs.TokensReader.Simple[GraphScope] {
+      def shortName: String = "scope"
+      def read(strs: Seq[String]): Either[String, GraphScope] =
+        fromString(strs.last)
+    }
+
   /** `dependencyGraphScope` is a `Task`, and Mill caches task values as JSON. */
   implicit val rw: upickle.default.ReadWriter[GraphScope] =
     upickle.default

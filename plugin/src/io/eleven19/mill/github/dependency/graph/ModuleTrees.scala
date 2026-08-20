@@ -8,25 +8,28 @@ import mill.javalib.JavaModule
 import scala.collection.mutable
 import scala.util.Try
 
-/** Represents a project modules an the dependency trees that belong to it.
+/** Represents a project module and the dependency trees that belong to it.
   *
   * @param module The module
-  * @param dependencyTrees The dependency Trees belonging to the module
-  * NOTE: that the roots of the trees are the direct dependencies.
-  * @param indirectTrees Trees rooted at dependencies the module picks up
-  * through its internal `moduleDeps`. Their roots are reported as indirect:
-  * the module never declared them, but a consumer of the module gets them.
+  * @param roots Each tree, paired with what the nodes reached from it inherit.
+  *   A root's own [[NodeFacts]] describe the root itself; everything below it
+  *   inherits the scope and becomes indirect.
   */
 final case class ModuleTrees(
     module: JavaModule,
-    dependencyTrees: Seq[DependencyTree],
-    indirectTrees: Seq[DependencyTree] = Nil
+    roots: Seq[(DependencyTree, NodeFacts)]
 ) {
 
   /** Takes the dependencyTrees and flattens them to fit the model of the
     * DependencyNode that GitHub wants. They become flattened and every
     * dependency has a top level entry. Only the roots of the trees however
     * get a "direct" relationship.
+    *
+    * A coordinate can be reached from more than one root — declared directly
+    * *and* pulled in through a `moduleDeps` edge, say, or present both at
+    * runtime and as a `compileMvnDeps`. [[NodeFacts.merge]] decides what the
+    * node then says, and it is order-independent, so the order roots are
+    * walked in does not change the output.
     *
     * @return Mapping of the name of the dependency and the DependencyNode that
     * corresponds to it. The format of the name is org:module:version.
@@ -37,35 +40,47 @@ final case class ModuleTrees(
 
     // Keep track of every seen dependency and the DependencyNode for it
     val allDependencies = mutable.Map[String, DependencyNode]()
-    // NOTE: maybe note necessary, but since we do this look in various times, we cache it
+    // NOTE: maybe not necessary, but since we do this lookup various times, we cache it
     val treeToName = mutable.Map[DependencyTree, String]()
 
-    def toNode(tree: DependencyTree, root: Boolean): Unit = {
+    def getNameFromTree(tree: DependencyTree): String =
+      treeToName.getOrElseUpdate(
+        tree, {
+          val dep = tree.dependency
+          @annotation.nowarn("msg=deprecated")
+          val reconciledVersion0 = tree.reconciledVersion
+          s"${dep.module.orgName}:${reconciledVersion0}"
+        }
+      )
 
-      def getNameFromTree(_tree: DependencyTree): String = {
-        treeToName.getOrElseUpdate(
-          _tree, {
-            val _dep = _tree.dependency
-            val moduleOrgName = _dep.module.orgName
-            @annotation.nowarn("msg=deprecated")
-            val reconciledVersion0 = _tree.reconciledVersion
-            s"${moduleOrgName}:${reconciledVersion0}"
+    def factsOf(node: DependencyNode): NodeFacts =
+      NodeFacts(
+        node.relationship.getOrElse(DependencyRelationship.indirect),
+        node.scope.getOrElse(DependencyScope.runtime)
+      )
 
-          }
-        )
-      }
+    /** True when the recorded node already says everything `facts` would add.
+      *
+      * This is what makes revisiting cheap *and* correct. The old check was
+      * "have we seen this name at all", which was fine when the only claim a
+      * root made was direct-or-indirect and roots were walked direct-first.
+      * Now a later root can carry a *wider* scope, and skipping it would
+      * leave a runtime dependency marked development.
+      */
+    def settled(name: String, facts: NodeFacts): Boolean =
+      allDependencies
+        .get(name)
+        .exists(node => factsOf(node).merge(facts) == factsOf(node))
 
+    def toNode(tree: DependencyTree, facts: NodeFacts): Unit = {
       val dep = tree.dependency
       val name = getNameFromTree(tree)
       @annotation.nowarn("msg=deprecated")
       val reconciledVersion0 = tree.reconciledVersion
-      val children = tree.children
-      val childrenNames = children.map(getNameFromTree)
+      val childrenNames = tree.children.map(getNameFromTree)
 
-      def putTogether: DependencyNode = {
-        // TODO consider classifiers
-
-        val purl = Try(
+      def purl: Option[String] =
+        Try(
           PackageURLBuilder
             .aPackageURL()
             .withType("maven")
@@ -84,42 +99,22 @@ final case class ModuleTrees(
           validPurl => Some(validPurl.toString())
         )
 
-        val relationShip: DependencyRelationship =
-          if (root) DependencyRelationship.direct
-          else DependencyRelationship.indirect
-
-        DependencyNode(
-          purl,
-          // TODO we can check if original == reconciled here and add metadata that it is a reconciled version
-          Map.empty,
-          Some(relationShip),
-          None,
-          childrenNames
-        )
-      }
-
-      def verifyRelationship(node: DependencyNode) =
-        (root && node.isDirectDependency) || (!root && !node.isDirectDependency)
-
       allDependencies.get(name) match {
-        // If the node is found and the relationship is correct just do nothing
-        case Some(node) if verifyRelationship(node) =>
-          ctx.log.debug(
-            s"Already seen ${name} with this relationship in this manifest, so skipping..."
-          )
-        // If the node is found and the relationship is incorrect, but it's a
-        // root node, then make sure to mark it as direct
-        case Some(node) if root =>
-          ctx.log.debug(
-            s"Already seen ${name} but we're at the root level so marking as direct..."
-          )
-          val updated =
-            node.copy(relationship = Some(DependencyRelationship.direct))
-          allDependencies += ((name, updated))
-        case Some(_) =>
-          ctx.log.debug(
-            s"Found ${name}, but it's already marked as direct so skipping..."
-          )
+        case Some(existing) =>
+          val merged = factsOf(existing).merge(facts)
+          if (merged != factsOf(existing))
+            allDependencies += ((
+              name,
+              existing.copy(
+                relationship = Some(merged.relationship),
+                scope = Some(merged.scope)
+              )
+            ))
+          else
+            ctx.log.debug(
+              s"Already seen ${name} saying at least this much, so skipping..."
+            )
+
         // Not a very elegant check, but we don't want to include a range in
         // here. These shouldn't still be a range at this point, but it is for
         // whatever reason. For now ignore it. This should be incredibly rare
@@ -133,17 +128,29 @@ final case class ModuleTrees(
                 |If you see this, report it. Skipping...
                 |""".stripMargin
           )
-        // Unseen dependency, create a node for it
+
         case None =>
-          val node = putTogether
-          allDependencies += ((name, node))
+          allDependencies += ((
+            name,
+            DependencyNode(
+              purl,
+              // TODO we can check if original == reconciled here and add metadata that it is a reconciled version
+              Map.empty,
+              Some(facts.relationship),
+              Some(facts.scope),
+              childrenNames
+            )
+          ))
       }
 
-      // If all the children are already contained in allDependencies we don't even need
-      // to try and process them, we just skip it and move on.
-      if (childrenNames.forall(allDependencies.contains)) {
+      // Everything below a root is indirect, whatever the root itself was.
+      // Scope is inherited unchanged: a dependency reached only through a
+      // test module's tree is a development dependency all the way down.
+      val childFacts = facts.asIndirect
+
+      if (childrenNames.forall(settled(_, childFacts))) {
         ctx.log.debug(
-          s"short circuiting as all children of ${name} are already looked at."
+          s"short circuiting as all children of ${name} are already settled."
         )
       } else {
         // This is a bit odd, but needed in the context of
@@ -152,22 +159,19 @@ final case class ModuleTrees(
         // espeically when using classifiers. This actually seems like it might
         // be another bug in Couriser:
         // https://github.com/coursier/coursier/issues/2683
-        // So, for now we filter out itself if it has itself listed as a child and we
-        // also filter out any children that we've already seen.
+        // So, for now we filter out itself if it has itself listed as a child.
+        // Children that already say everything we would tell them are skipped
+        // too, which is what stops a cycle here: `merge` only ever widens a
+        // node, and both axes have one step, so revisiting converges.
         tree.children
           .filterNot(child =>
-            child == tree ||
-              allDependencies.contains(getNameFromTree(child))
+            child == tree || settled(getNameFromTree(child), childFacts)
           )
-          .foreach(toNode(_, root = false))
+          .foreach(toNode(_, childFacts))
       }
     }
 
-    // Direct first, so a dependency that is both declared here and reachable
-    // through a module dep stays direct: the `Some(_) => skip` branch below
-    // leaves an already-direct node alone when it is revisited as indirect.
-    dependencyTrees.foreach(toNode(_, root = true))
-    indirectTrees.foreach(toNode(_, root = false))
+    roots.foreach { case (tree, facts) => toNode(tree, facts) }
     allDependencies.toMap
   }
 

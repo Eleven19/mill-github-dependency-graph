@@ -13,6 +13,31 @@ import mill.testkit.IntegrationTester
   */
 object Fixtures {
 
+  private val defaultRuns =
+    scala.collection.mutable.Map.empty[String, Map[String, Set[String]]]
+
+  /** One no-flag `generate` over a fixture, run once and reused.
+    *
+    * Several tests assert on different parts of the same output. Each used to
+    * spawn its own Mill subprocess against a fresh workspace, which was most
+    * of this suite's runtime for no extra coverage — the input is identical,
+    * so the output is too.
+    *
+    * Runs that pass flags are deliberately NOT shared: different input,
+    * different output, and collapsing them would weaken the tests rather than
+    * speed them up.
+    */
+  def defaultManifests(name: String): Map[String, Set[String]] =
+    synchronized {
+      defaultRuns.getOrElseUpdate(
+        name,
+        withFixture(name) { tester =>
+          requireSuccess(generate(tester))
+          manifests(tester)
+        }
+      )
+    }
+
   private def resource(name: String): os.Path = {
     val url = Option(getClass.getClassLoader.getResource(name)).getOrElse(
       throw new java.lang.AssertionError(
@@ -82,6 +107,32 @@ object Fixtures {
 
   private val generateSelector =
     "io.eleven19.mill.github.dependency.graph.Graph/generate"
+
+  private val submitSelector =
+    "io.eleven19.mill.github.dependency.graph.Graph/submit"
+
+  /** Runs `submit` with its API endpoint pointed at a closed local port, so
+    * the POST cannot leave the machine.
+    *
+    * Never call `submit` in a test without this. Inside GitHub Actions every
+    * `GITHUB_*` variable is set and `ci.yml` exports `GITHUB_TOKEN`, and
+    * `IntegrationTester` propagates the environment — so a test that merely
+    * assumes "this cannot succeed here" will submit a real dependency
+    * snapshot for this repository. An earlier version of this helper did
+    * exactly that: the fixture's dependencies were accepted by the API under
+    * the `integration_ci` correlator.
+    *
+    * Port 1 refuses connections, so `submit` fails at the POST — after
+    * `generate` has written `--output`, which is what these tests assert on.
+    */
+  def submitWithoutReachingGitHub(
+      tester: IntegrationTester,
+      args: String*
+  ): IntegrationTester.EvalResult =
+    tester.eval(
+      Seq(submitSelector) ++ args,
+      env = env ++ Map("GITHUB_API_URL" -> "http://127.0.0.1:1")
+    )
 
   private val reportSelector =
     "io.eleven19.mill.github.dependency.graph.Graph/report"

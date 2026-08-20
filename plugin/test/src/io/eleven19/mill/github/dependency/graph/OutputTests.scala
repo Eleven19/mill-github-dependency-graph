@@ -253,7 +253,7 @@ object OutputTests extends TestSuite {
           eval.apply(
             Graph.report(
               eval.evaluator,
-              scope = Some("compile"),
+              scope = Some(GraphScope.Compile),
               output = Some(compileDestination.toString)
             )
           ) match {
@@ -266,7 +266,7 @@ object OutputTests extends TestSuite {
           eval.apply(
             Graph.report(
               eval.evaluator,
-              scope = Some("runtime"),
+              scope = Some(GraphScope.Runtime),
               output = Some(runtimeDestination.toString)
             )
           ) match {
