@@ -51,11 +51,12 @@ resolves to `mill-github-dependency-graph_mill1_3`.
 |---|---|---|
 | **Plugin** | `io.eleven19.mill-github-dependency-graph` | `mill-github-dependency-graph_mill1_3` |
 | **Domain** | `io.eleven19.mill-github-dependency-graph` | `github-dependency-graph-domain_3` |
+| **Report** | `io.eleven19.mill-github-dependency-graph` | `github-dependency-graph-report_3` |
 
 The plugin compiles against the Mill API, so its artifact carries the
 `_mill1` platform suffix that Mill plugins use to declare which Mill binary
-platform they target. The domain module has no Mill dependency and stays
-unsuffixed.
+platform they target. The domain and report modules have no Mill dependency
+and stay unsuffixed.
 
 > **Upgrading from `0.0.x`:** the artifact id changed in `0.1.0`. Releases up
 > to and including `0.0.2` were published as `mill-github-dependency-graph_3`,
@@ -69,7 +70,7 @@ Browse on Sonatype Central:
 
 ## Getting started
 
-The plugin gives you two commands. Both are spelled out in full because the
+The plugin gives you three commands. All are spelled out in full because the
 plugin installs itself as an external module, not as a task on your own
 modules.
 
@@ -128,13 +129,23 @@ dependencies](https://docs.github.com/en/code-security/supply-chain-security/und
 > identically on both commands, so you can tune your flags locally with
 > `show` and then paste the same ones into your workflow.
 
+**`report`** renders the same graph as a single self-contained HTML file —
+one page, no server or extra assets — that you can open straight in a
+browser. Like `generate`, it never contacts GitHub:
+
+```sh
+./mill io.eleven19.mill.github.dependency.graph.Graph/report
+```
+
+See [HTML report](#html-report) for what is on the page.
+
 ## Configuration
 
 > **These options need a release newer than `0.1.0`.** If `--scope` gives you
 > `Unknown arguments: "--scope"`, your pinned plugin predates them — bump the
 > coordinate in `build.mill.yaml`.
 
-Both commands accept the same three options. You need none of them to start:
+Both commands accept the same four options. You need none of them to start:
 out of the box the plugin covers every module in your build, at runtime scope.
 
 | Option | Values | Default | What it does |
@@ -142,6 +153,7 @@ out of the box the plugin covers every module in your build, at runtime scope.
 | `--scope` | `compile`, `runtime`, `all` | unset — each module decides (see `dependencyGraphScope`) | How much of each module's dependency graph to report |
 | `--modules` | Mill selectors, repeatable | every module | Only cover the modules these selectors name |
 | `--exclude-modules` | Mill selectors, repeatable | nothing excluded | Drop modules, applied after `--modules` |
+| `--output` | a file path | unset — each command's own `out/` task directory | Also write the manifests as JSON to this path. Mill's own `out/` metadata file is written either way, so this adds a copy rather than moving it. A relative path resolves against the workspace root. |
 
 There is also one build-file setting:
 
@@ -336,28 +348,50 @@ Recipes for the situations that actually come up.
 ./mill show io.eleven19.mill.github.dependency.graph.Graph/generate
 ```
 
-For a build of any size that is a lot of JSON. To see just which modules were
-covered and how many dependencies each reported:
+For a build of any size that is a lot of JSON. There is no `--json` flag for
+a smaller shape — pipe `mill show`'s output through `jq` instead:
 
 ```sh
-./mill io.eleven19.mill.github.dependency.graph.Graph/generate
-python3 -c "
-import json
-report = json.load(open('out/io.eleven19.mill.github.dependency.graph.Graph/generate.json'))
-manifests = report.get('value', report)
-print(f'{len(manifests)} modules')
-for name, manifest in sorted(manifests.items()):
-    print(f'  {name}: {len(manifest[\"resolved\"])} dependencies')
-"
+./mill show io.eleven19.mill.github.dependency.graph.Graph/generate \
+  | jq 'to_entries | map({module: .key, dependencies: (.value.resolved | length)})'
 ```
+
+To see the same count-per-module summary without writing a query, use
+[`Graph/report`](#html-report): its "By module" tab lists every module with
+its direct, indirect and total counts.
+
+### HTML report
+
+`Graph/report` renders the graph `generate` builds as one self-contained HTML
+file — no server, no extra assets — that you can open directly in a browser
+or attach as a CI artifact:
+
+```sh
+./mill io.eleven19.mill.github.dependency.graph.Graph/report --output dependency-graph.html
+```
+
+With no `--output`, it writes into the command's own Mill task directory and
+logs the absolute path it wrote.
+
+The page has two tabs, and one filter box that searches whichever tab is
+open:
+
+- **By module** — every module with its direct, indirect and total dependency
+  counts. Expand a row to see that module's dependencies.
+- **By dependency** — every `org:name`, the versions seen for it across your
+  build, and how many modules carry it. Expand a row to see which modules. A
+  coordinate resolved to more than one version across modules is marked —
+  that is what "version conflict" means here; within a single module,
+  coursier has already reconciled to one version.
 
 ### Check whether one specific dependency made it into the graph
 
-Useful when you expect something and do not see it in the GitHub UI:
+Useful when you expect something and do not see it in the GitHub UI. This is
+the recipe `Graph/report` was designed from: run it, open the "By dependency"
+tab, and type the dependency's name into the filter box.
 
 ```sh
-./mill io.eleven19.mill.github.dependency.graph.Graph/generate
-grep -o '"[^"]*slf4j[^"]*"' out/io.eleven19.mill.github.dependency.graph.Graph/generate.json | sort -u
+./mill io.eleven19.mill.github.dependency.graph.Graph/report
 ```
 
 If it is missing, two things to check before assuming a bug. First, try a
