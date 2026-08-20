@@ -23,7 +23,8 @@ object Resolver {
   private[graph] def resolveModuleTrees(
       evaluator: Evaluator,
       javaModules: Seq[JavaModule],
-      scope: Option[GraphScope]
+      scope: Option[GraphScope],
+      includeModuleDeps: Option[Boolean] = None
   ): Seq[ModuleTrees] = {
     val tasks = javaModules.map { javaModule =>
       // Built outside the `Task.Anon` below on purpose: Mill's task macro
@@ -33,22 +34,50 @@ object Resolver {
         case Some(passed) => Task.Anon(passed)
         case None =>
           javaModule match {
-            case scoped: GraphScopeModule => scoped.dependencyGraphScope
-            case _                        => Task.Anon(GraphScope.Runtime)
+            case settings: DependencyGraphModule =>
+              settings.dependencyGraphScope
+            case _ => Task.Anon(GraphScope.Runtime)
           }
       }
+
+      val includeModuleDepsTask: Task[Boolean] = includeModuleDeps match {
+        case Some(passed) => Task.Anon(passed)
+        case None =>
+          javaModule match {
+            case settings: DependencyGraphModule => settings.includeModuleDeps
+            case _                               => Task.Anon(true)
+          }
+      }
+
+      // Every module reached through internal `moduleDeps`, transitively.
+      // Their own dependencies are what a consumer of this module picks up
+      // and what its manifest has to report.
+      val moduleDeps = javaModule.recursiveModuleDeps
+      val moduleDepAllMvnDeps = Task.sequence(moduleDeps.map(_.allMvnDeps))
+      val moduleDepRunMvnDeps = Task.sequence(moduleDeps.map(_.runMvnDeps))
+      val moduleDepCompileMvnDeps =
+        Task.sequence(moduleDeps.map(_.compileMvnDeps))
 
       Task.Anon {
         val bindDep = javaModule.bindDependency()
         def bound(deps: Seq[mill.javalib.Dep]) =
           deps.map(bindDep).map(_.dep)
 
+        // The opt-out is expressed by handing the scope table empty module-dep
+        // lists, so the table itself never branches on it.
+        val withModuleDeps = includeModuleDepsTask()
+        def fromModuleDeps(deps: Seq[Seq[mill.javalib.Dep]]) =
+          if (withModuleDeps) bound(deps.flatten) else Nil
+
         val roots = ScopedRoots(
           scope = scopeTask(),
           synthetic = javaModule.coursierDependencyTask(),
           allMvnDeps = bound(javaModule.allMvnDeps()),
           runMvnDeps = bound(javaModule.runMvnDeps()),
-          compileMvnDeps = bound(javaModule.compileMvnDeps())
+          compileMvnDeps = bound(javaModule.compileMvnDeps()),
+          moduleDepAllMvnDeps = fromModuleDeps(moduleDepAllMvnDeps()),
+          moduleDepRunMvnDeps = fromModuleDeps(moduleDepRunMvnDeps()),
+          moduleDepCompileMvnDeps = fromModuleDeps(moduleDepCompileMvnDeps())
         )
 
         // `millResolver` rather than `defaultResolver`: the module's synthetic
@@ -65,8 +94,10 @@ object Resolver {
         // resolution settled on.
         val trees =
           DependencyTree(resolution = resolution, roots = roots.trees)
+        val indirectTrees =
+          DependencyTree(resolution = resolution, roots = roots.indirectTrees)
 
-        ModuleTrees(javaModule, trees)
+        ModuleTrees(javaModule, trees, indirectTrees)
       }
     }
 

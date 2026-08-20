@@ -69,3 +69,15 @@ object declaresCompile extends Fixture
     mvn"org.junit.platform:junit-platform-suite-engine:1.11.4"
   )
 }
+
+/** An internal `moduleDeps` edge. `dependsOnInternal` declares none of
+  * `internalLib`'s dependencies, but anyone consuming it gets them, so its
+  * manifest has to report them.
+  */
+object internalLib extends Fixture {
+  override def mvnDeps = Seq(mvn"com.lihaoyi::sourcecode:0.4.2")
+}
+
+object dependsOnInternal extends Fixture {
+  override def moduleDeps = Seq(internalLib)
+}

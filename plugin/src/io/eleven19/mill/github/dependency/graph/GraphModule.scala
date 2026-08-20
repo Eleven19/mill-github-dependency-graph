@@ -22,7 +22,8 @@ trait GraphModule extends ExternalModule {
       scope: Option[String] = None,
       modules: Seq[String] = Nil,
       excludeModules: Seq[String] = Nil,
-      output: Option[String] = None
+      output: Option[String] = None,
+      noModuleDeps: mainargs.Flag = mainargs.Flag()
   ): Task.Command[Unit] =
     Task.Command(exclusive = true) {
       val manifests = generate(
@@ -30,7 +31,8 @@ trait GraphModule extends ExternalModule {
         scope = scope,
         modules = modules,
         excludeModules = excludeModules,
-        output = output
+        output = output,
+        noModuleDeps = noModuleDeps
       )()
       val snapshot = Github.snapshot(manifests)
       Github.submit(snapshot)
@@ -59,6 +61,9 @@ trait GraphModule extends ExternalModule {
     *   module is covered.
     * @param excludeModules Mill selectors naming modules to leave out, applied
     *   after `modules`.
+    * @param noModuleDeps Leave out dependencies reached through internal
+    *   `moduleDeps`. Off by default: omitting them understates what a module
+    *   depends on. Pass it when the repetition costs more than the accuracy.
     * @param output Where to also write the manifests, as the same JSON `mill
     *   show` prints. Omitted, nothing extra is written. Mill's own
     *   `generate.json` metadata file is written either way; this adds a copy,
@@ -69,7 +74,8 @@ trait GraphModule extends ExternalModule {
       scope: Option[String] = None,
       modules: Seq[String] = Nil,
       excludeModules: Seq[String] = Nil,
-      output: Option[String] = None
+      output: Option[String] = None,
+      noModuleDeps: mainargs.Flag = mainargs.Flag()
   ): Task.Command[Map[String, domain.Manifest]] =
     Task.Command(exclusive = true) {
       // Both argument checks run before any work. See `resolveOutput`.
@@ -132,8 +138,15 @@ trait GraphModule extends ExternalModule {
             s"${discovered.size - selected.size} excluded by selector"
         )
 
-      val moduleTrees =
-        Resolver.resolveModuleTrees(ev, selected, parsedScope)
+      // The flag can only turn inclusion off, never force it on over a
+      // module that opted out: it exists as an escape hatch for payload size,
+      // and there is no reason to overrule a build that asked for less.
+      val moduleTrees = Resolver.resolveModuleTrees(
+        ev,
+        selected,
+        parsedScope,
+        includeModuleDeps = Option.when(noModuleDeps.value)(false)
+      )
 
       val manifests =
         moduleTrees.map(mt => (mt.module.toString(), mt.toManifest())).toMap
@@ -162,7 +175,8 @@ trait GraphModule extends ExternalModule {
       scope: Option[String] = None,
       modules: Seq[String] = Nil,
       excludeModules: Seq[String] = Nil,
-      output: Option[String] = None
+      output: Option[String] = None,
+      noModuleDeps: mainargs.Flag = mainargs.Flag()
   ): Task.Command[String] =
     Task.Command(exclusive = true) {
       // Before `generate`, which resolves every module: an existing-directory
@@ -173,7 +187,8 @@ trait GraphModule extends ExternalModule {
         ev,
         scope = scope,
         modules = modules,
-        excludeModules = excludeModules
+        excludeModules = excludeModules,
+        noModuleDeps = noModuleDeps
       )()
 
       val destination = chosen.getOrElse(Task.dest / "graph-report.html")

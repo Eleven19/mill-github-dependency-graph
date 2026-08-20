@@ -26,6 +26,8 @@ object ResolverTests extends TestSuite {
   private val jacksonBomVersion = "2.18.2"
   private val jacksonPinnedVersion = "2.15.0"
   private val junitPlatformVersion = "1.11.4"
+  private val sourcecodeVersion = "0.4.2"
+  private val sourcecode = s"com.lihaoyi:sourcecode_3:$sourcecodeVersion"
   private val slf4jVersion = "2.0.16"
   private val lombokVersion = "1.18.36"
 
@@ -110,6 +112,31 @@ object ResolverTests extends TestSuite {
       override def mvnDeps = Seq(
         mvn"org.junit.platform:junit-platform-suite-engine:$junitPlatformVersion"
       )
+    }
+
+    /** An internal `moduleDeps` edge. `app` declares nothing of `lib`'s
+      * dependencies, but a consumer of `app` gets them on the classpath, so
+      * `app`'s manifest has to report them.
+      */
+    object lib extends ScalaModule {
+      def scalaVersion = scala3
+      override def mvnDeps = Seq(
+        mvn"com.lihaoyi::sourcecode:$sourcecodeVersion"
+      )
+    }
+
+    object app extends ScalaModule {
+      def scalaVersion = scala3
+      override def moduleDeps = Seq(lib)
+      override def mvnDeps = Seq(mvn"org.slf4j:slf4j-api:$slf4jVersion")
+    }
+
+    /** The same edge, with the module opting out. */
+    object appOptedOut extends ScalaModule with DependencyGraphModule {
+      def scalaVersion = scala3
+      override def includeModuleDeps = Task { false }
+      override def moduleDeps = Seq(lib)
+      override def mvnDeps = Seq(mvn"org.slf4j:slf4j-api:$slf4jVersion")
     }
 
     lazy val millDiscover = Discover[this.type]
@@ -449,6 +476,69 @@ object ResolverTests extends TestSuite {
       }
     }
 
+    test("dependencies reached through moduleDeps") {
+
+      test("reach the depending module's manifest") {
+        // `app` declares none of `lib`'s dependencies, but anyone consuming
+        // `app` gets them. Before this, `app`'s manifest denied it.
+        val resolved = manifestOf(testBuild.app).resolved
+        assert(resolved.contains(sourcecode))
+      }
+
+      test("are marked indirect, not direct") {
+        // `app` did not ask for sourcecode; it arrived through `lib`. Marking
+        // it direct would claim `app` declares it.
+        val resolved = manifestOf(testBuild.app).resolved
+        assert(!resolved(sourcecode).isDirectDependency)
+      }
+
+      test("do not displace the module's own direct dependencies") {
+        val resolved = manifestOf(testBuild.app).resolved
+        val own = s"org.slf4j:slf4j-api:$slf4jVersion"
+        assert(resolved.contains(own))
+        assert(resolved(own).isDirectDependency)
+      }
+
+      test("are absent when the module opts out") {
+        val resolved = manifestOf(testBuild.appOptedOut).resolved
+        assert(!resolved.contains(sourcecode))
+        assert(resolved.contains(s"org.slf4j:slf4j-api:$slf4jVersion"))
+      }
+
+      test("--no-module-deps drops them, through the command") {
+        // `noModuleDeps` is forwarded from `submit` and `report` into
+        // `generate`. Twice on this project a forwarded parameter has been
+        // silently dropped with every test still green, so the flag is
+        // exercised through the command rather than through the parameter.
+        UnitTester(testBuild, null).scoped { eval =>
+          def keysWith(flag: Boolean): Set[String] =
+            eval.apply(
+              Graph.generate(
+                eval.evaluator,
+                modules = Seq("app"),
+                noModuleDeps = mainargs.Flag(flag)
+              )
+            ) match {
+              case Right(result) => result.value("app").resolved.keySet
+              case Left(failure) =>
+                throw new java.lang.AssertionError(s"generate failed: $failure")
+            }
+
+          assert(keysWith(false).contains(sourcecode))
+          assert(!keysWith(true).contains(sourcecode))
+        }
+      }
+
+      test("every scope still produces a manifest with moduleDeps present") {
+        // The #12 failure mode: an indirect root the resolution never walked
+        // aborts the whole run. These roots are reached through a *different*
+        // module's coursier project, so the stamping is not obviously right.
+        GraphScope.values.foreach { scope =>
+          assert(manifestOf(testBuild.app, Some(scope)).resolved.nonEmpty)
+        }
+      }
+    }
+
     test("every JavaModule in the build is discovered") {
       // Guards `computeModules` independently of resolution, so a resolution
       // failure cannot be mistaken for a discovery failure.
@@ -462,7 +552,10 @@ object ResolverTests extends TestSuite {
           "bomOverridesTransitive",
           "viaRuntimeScope",
           "everyScope",
-          "declaresCompile"
+          "declaresCompile",
+          "lib",
+          "app",
+          "appOptedOut"
         )
       )
     }

@@ -32,7 +32,9 @@ object DependencyShapesTests extends TestSuite {
             "bomOverridesTransitive",
             "runtimeScoped",
             "everyScope",
-            "declaresCompile"
+            "declaresCompile",
+            "internalLib",
+            "dependsOnInternal"
           )
         )
       }
@@ -80,6 +82,36 @@ object DependencyShapesTests extends TestSuite {
             "org.junit.platform:junit-platform-suite-commons:1.11.4"
           )
         )
+      }
+    }
+
+    test("dependencies reached through moduleDeps") {
+
+      test("reach the depending module's manifest, marked indirect") {
+        // The gap this closes was found in this repo's own graph: `plugin`
+        // depends on `report`, `report` depends on scalatags, and `plugin`'s
+        // manifest denied it. A consumer of the published artifact gets it.
+        Fixtures.withFixture("dependency-shapes") { tester =>
+          Fixtures.requireSuccess(Fixtures.generate(tester))
+          val reported = Fixtures.manifests(tester)("dependsOnInternal")
+          assert(reported.contains("com.lihaoyi:sourcecode_3:0.4.2"))
+        }
+      }
+
+      test("--no-module-deps leaves them out") {
+        Fixtures.withFixture("dependency-shapes") { tester =>
+          Fixtures.requireSuccess(
+            Fixtures.generate(tester, "--no-module-deps")
+          )
+          val reported = Fixtures.manifests(tester)("dependsOnInternal")
+          assert(!reported.contains("com.lihaoyi:sourcecode_3:0.4.2"))
+          // The module's own dependencies are untouched by the flag.
+          assert(
+            Fixtures
+              .manifests(tester)("internalLib")
+              .contains("com.lihaoyi:sourcecode_3:0.4.2")
+          )
+        }
       }
     }
 
