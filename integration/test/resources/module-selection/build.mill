@@ -29,7 +29,13 @@ object lib extends Fixture {
 
 /** A plain container, not a `JavaModule`. It must not get a manifest:
   * `computeModules` collects `JavaModule` only.
+  *
+  * `stamp` gives a selector a real Mill task to resolve to that still owns
+  * no `JavaModule` — `tooling` itself is a `Module`, not a `JavaModule` — so
+  * a test can hit the guard in `GraphModule.generate` that rejects a
+  * `--modules` selector naming no `JavaModule`.
   */
 object tooling extends Module {
+  def stamp = Task { "x" }
   object sub extends Fixture
 }

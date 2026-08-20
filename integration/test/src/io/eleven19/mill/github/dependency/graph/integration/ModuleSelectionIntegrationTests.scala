@@ -69,7 +69,7 @@ object ModuleSelectionIntegrationTests extends TestSuite {
         }
       }
 
-      test("exclusion applies after inclusion") {
+      test("exclusion wins over inclusion on overlap") {
         Fixtures.withFixture("module-selection") { tester =>
           Fixtures.requireSuccess(
             Fixtures.generate(
@@ -81,6 +81,18 @@ object ModuleSelectionIntegrationTests extends TestSuite {
             )
           )
           assert(Fixtures.manifests(tester).keySet == Set("app"))
+        }
+      }
+
+      test("naming a task with no owning JavaModule fails") {
+        // `tooling` is a plain `Module`, not a `JavaModule`, so `tooling.stamp`
+        // resolves to a real Mill task that still owns no `JavaModule` --
+        // exactly the precondition the guard in `GraphModule.generate` checks.
+        Fixtures.withFixture("module-selection") { tester =>
+          val result = Fixtures.generate(tester, "--modules", "tooling.stamp")
+          assert(!result.isSuccess)
+          val output = result.out + result.err
+          assert(output.contains("--modules"))
         }
       }
     }
