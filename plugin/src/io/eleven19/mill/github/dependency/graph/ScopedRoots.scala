@@ -1,6 +1,7 @@
 package io.eleven19.mill.github.dependency.graph
 
 import coursier.core.{Configuration, Dependency, VariantSelector}
+import io.eleven19.github.dependency.graph.domain.DependencyScope
 
 /** The dependencies a scope resolves, and the dependencies its trees are
   * rooted at.
@@ -22,15 +23,12 @@ import coursier.core.{Configuration, Dependency, VariantSelector}
 private[graph] object ScopedRoots {
 
   /** @param resolution what the coursier resolution is rooted at
-    * @param trees the module's own dependencies, reported as direct
-    * @param indirectTrees dependencies reached through internal `moduleDeps`,
-    *   reported as indirect — the module never declared them, but a consumer
-    *   of the module gets them on the classpath
+    * @param roots each tree root, paired with what the nodes reached from it
+    *   inherit. One list rather than one per category: see [[NodeFacts]].
     */
   final case class Roots(
       resolution: Seq[Dependency],
-      trees: Seq[Dependency],
-      indirectTrees: Seq[Dependency] = Nil
+      roots: Seq[(Dependency, NodeFacts)]
   )
 
   private val compile =
@@ -61,6 +59,9 @@ private[graph] object ScopedRoots {
     *   through internal `moduleDeps`, already bound. Same for the other two
     *   `moduleDep*` lists. Empty when module deps are excluded, which is how
     *   the opt-out is expressed — the scope table does not branch on it.
+    * @param isTestModule whether this module is a `TestModule`. Everything in
+    *   a test module's manifest is a development dependency: nothing it pulls
+    *   in ships, whatever scope it was declared at.
     */
   def apply(
       scope: GraphScope,
@@ -70,22 +71,51 @@ private[graph] object ScopedRoots {
       compileMvnDeps: Seq[Dependency],
       moduleDepAllMvnDeps: Seq[Dependency] = Nil,
       moduleDepRunMvnDeps: Seq[Dependency] = Nil,
-      moduleDepCompileMvnDeps: Seq[Dependency] = Nil
-  ): Roots =
+      moduleDepCompileMvnDeps: Seq[Dependency] = Nil,
+      isTestModule: Boolean = false
+  ): Roots = {
+
+    // What a module's ordinary dependencies count as. `compileMvnDeps` are
+    // development wherever they appear — they are needed to build and never
+    // ship — so they do not consult this.
+    val ships =
+      if (isTestModule) DependencyScope.development
+      else DependencyScope.runtime
+
+    val builds = DependencyScope.development
+
+    def rootsOf(
+        deps: Seq[Dependency],
+        selector: VariantSelector,
+        facts: NodeFacts
+    ): Seq[(Dependency, NodeFacts)] =
+      stamp(deps, selector).map(_ -> facts)
+
     scope match {
       case GraphScope.Compile =>
         Roots(
           resolution = Seq(synthetic.withVariantSelector(compile)),
-          trees = stamp(allMvnDeps, compile),
-          indirectTrees = stamp(moduleDepAllMvnDeps, compile)
+          roots = rootsOf(allMvnDeps, compile, NodeFacts.direct(ships)) ++
+            rootsOf(
+              moduleDepAllMvnDeps,
+              compile,
+              NodeFacts.indirect(ships)
+            )
         )
 
       case GraphScope.Runtime =>
         Roots(
           resolution = Seq(synthetic.withVariantSelector(runtime)),
-          trees = stamp(allMvnDeps ++ runMvnDeps, runtime),
-          indirectTrees =
-            stamp(moduleDepAllMvnDeps ++ moduleDepRunMvnDeps, runtime)
+          roots = rootsOf(
+            allMvnDeps ++ runMvnDeps,
+            runtime,
+            NodeFacts.direct(ships)
+          ) ++
+            rootsOf(
+              moduleDepAllMvnDeps ++ moduleDepRunMvnDeps,
+              runtime,
+              NodeFacts.indirect(ships)
+            )
         )
 
       case GraphScope.All =>
@@ -102,8 +132,23 @@ private[graph] object ScopedRoots {
             synthetic.withVariantSelector(runtime),
             synthetic.withVariantSelector(provided)
           ),
-          trees = stamp(allMvnDeps ++ runMvnDeps, runtime) ++
-            stamp(compileMvnDeps, compile)
+          roots = rootsOf(
+            allMvnDeps ++ runMvnDeps,
+            runtime,
+            NodeFacts.direct(ships)
+          ) ++
+            rootsOf(compileMvnDeps, compile, NodeFacts.direct(builds)) ++
+            rootsOf(
+              moduleDepAllMvnDeps ++ moduleDepRunMvnDeps,
+              runtime,
+              NodeFacts.indirect(ships)
+            ) ++
+            rootsOf(
+              moduleDepCompileMvnDeps,
+              compile,
+              NodeFacts.indirect(builds)
+            )
         )
     }
+  }
 }

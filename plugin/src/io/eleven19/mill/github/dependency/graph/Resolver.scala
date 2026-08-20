@@ -77,7 +77,8 @@ object Resolver {
           compileMvnDeps = bound(javaModule.compileMvnDeps()),
           moduleDepAllMvnDeps = fromModuleDeps(moduleDepAllMvnDeps()),
           moduleDepRunMvnDeps = fromModuleDeps(moduleDepRunMvnDeps()),
-          moduleDepCompileMvnDeps = fromModuleDeps(moduleDepCompileMvnDeps())
+          moduleDepCompileMvnDeps = fromModuleDeps(moduleDepCompileMvnDeps()),
+          isTestModule = javaModule.isInstanceOf[mill.javalib.TestModule]
         )
 
         // `millResolver` rather than `defaultResolver`: the module's synthetic
@@ -92,12 +93,14 @@ object Resolver {
         // their versions up in the resolution by module, so a root whose
         // version came from `depManagement` or a BOM still reports the version
         // resolution settled on.
-        val trees =
-          DependencyTree(resolution = resolution, roots = roots.trees)
-        val indirectTrees =
-          DependencyTree(resolution = resolution, roots = roots.indirectTrees)
+        // `DependencyTree` preserves root order, so zipping the facts back on
+        // is safe and keeps them attached to the tree they describe.
+        val trees = DependencyTree(
+          resolution = resolution,
+          roots = roots.roots.map(_._1)
+        )
 
-        ModuleTrees(javaModule, trees, indirectTrees)
+        ModuleTrees(javaModule, trees.zip(roots.roots.map(_._2)))
       }
     }
 

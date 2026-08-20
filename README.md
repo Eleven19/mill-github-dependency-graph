@@ -247,6 +247,26 @@ different from passing nothing:
 So `--scope runtime` is not a no-op — it is how you force one scope across the
 whole build, ignoring what individual modules asked for.
 
+### Production or development
+
+Every dependency is reported with a scope GitHub understands: `runtime` for
+things that ship, `development` for things needed only to build or test.
+
+| What it is | Reported as |
+|---|---|
+| An ordinary module's dependencies | `runtime` |
+| Everything in a `TestModule`'s manifest | `development` |
+| `compileMvnDeps` under `--scope all` | `development` |
+
+Test modules are the reason this matters on most builds. A test module is an
+ordinary module with its own manifest, so its dependencies used to be
+indistinguishable from production ones — on a build like `finos/morphir-scala`
+that is 69 manifests out of 157.
+
+A coordinate reachable both ways is reported as `runtime`. If a library is on
+the runtime classpath, it ships, whatever else also pulls it in; understating
+that is the failure worth avoiding.
+
 ### `--no-module-deps` — dependencies from internal `moduleDeps`
 
 If `app` has `moduleDeps = Seq(lib)` and `lib` depends on Jackson, then
