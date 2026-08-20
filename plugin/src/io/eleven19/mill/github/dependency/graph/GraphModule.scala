@@ -2,6 +2,7 @@ package io.eleven19.mill.github.dependency.graph
 
 import io.eleven19.github.dependency.graph.domain
 import mill._
+import mill.api.BuildCtx
 import mill.api.ExternalModule
 import mill.api.Evaluator
 import mill.github.dependency.graph.internal.EvaluatorBridge
@@ -115,7 +116,7 @@ trait GraphModule extends ExternalModule {
         moduleTrees.map(mt => (mt.module.toString(), mt.toManifest())).toMap
 
       output.foreach { path =>
-        val destination = os.Path(path, os.pwd)
+        val destination = os.Path(path, BuildCtx.workspaceRoot)
         if (os.isDir(destination))
           throw new IllegalArgumentException(
             s"--output names an existing directory: $destination. " +

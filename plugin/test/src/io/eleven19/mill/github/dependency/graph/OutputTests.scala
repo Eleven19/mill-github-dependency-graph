@@ -51,6 +51,39 @@ object OutputTests extends TestSuite {
       }
     }
 
+    test(
+      "a relative --output resolves against the workspace root, not the caller's raw process cwd"
+    ) {
+      UnitTester(testBuild, null).scoped { eval =>
+        // `UnitTester.scoped` sets `BuildCtx.workspaceRoot` to `testBuild`'s
+        // own module dir for the scope of this block. That is the directory
+        // a relative `--output` must resolve against; `os.pwd` as observed
+        // from outside a running task -- e.g. from this test body, before
+        // `eval.apply` starts one -- is a different directory (Mill's own
+        // sandbox working directory for this test worker), so if generate()
+        // resolved the relative path against the wrong base entirely (say,
+        // a raw filesystem cwd captured before Mill's own workspace-relative
+        // machinery is in play) the file would land there instead.
+        val relative = "generated/manifest.json"
+        val expected = testBuild.moduleDir / "generated" / "manifest.json"
+        val underRawProcessCwd = os.pwd / "generated" / "manifest.json"
+        assert(testBuild.moduleDir != os.pwd)
+
+        try
+          eval.apply(
+            Graph.generate(eval.evaluator, output = Some(relative))
+          ) match {
+            case Right(_) =>
+              assert(os.exists(expected))
+              assert(ujson.read(os.read(expected)).obj.keySet == Set("foo"))
+              assert(!os.exists(underRawProcessCwd))
+            case Left(failure) =>
+              throw new java.lang.AssertionError(s"generate failed: $failure")
+          }
+        finally os.remove.all(os.pwd / "generated")
+      }
+    }
+
     test("--output into a directory that does not exist creates it") {
       UnitTester(testBuild, null).scoped { eval =>
         val destination = eval.outPath / "nested" / "deeper" / "manifest.json"
