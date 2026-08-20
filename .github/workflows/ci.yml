@@ -57,4 +57,21 @@ jobs:
 
     - name: Test
       run:
-        ./mill -i __.test
+        ./mill -i plugin.test
+
+  integration:
+    runs-on: 'ubuntu-latest'
+
+    steps:
+    - uses: actions/checkout@v7
+    - uses: actions/setup-java@v5
+      with:
+        distribution: 'temurin'
+        java-version: '21'
+
+    # Runs on one JDK only. Each case publishes the plugin and starts a Mill
+    # subprocess, so running the matrix would double a slow job for no signal
+    # — nothing about this plugin's resolution is JDK-specific.
+    - name: Integration test
+      run:
+        ./mill -i integration.test
