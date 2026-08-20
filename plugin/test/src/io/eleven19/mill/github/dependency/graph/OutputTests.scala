@@ -292,6 +292,34 @@ object OutputTests extends TestSuite {
           }
         }
       }
+
+      test(
+        "--modules narrows the report to the named module's name"
+      ) {
+        // Symmetric to the --exclude-modules test above: proves report()
+        // forwards `modules` to generate() too, not only `excludeModules`.
+        // Without this test, hardcoding `modules = Nil` in report()'s call
+        // to generate() -- silently ignoring --modules -- passed the full
+        // suite, including the --exclude-modules test above, unnoticed.
+        UnitTester(filterBuild, null).scoped { eval =>
+          val destination = eval.outPath / "included-report.html"
+
+          eval.apply(
+            Graph.report(
+              eval.evaluator,
+              modules = Seq("foo.__"),
+              output = Some(destination.toString)
+            )
+          ) match {
+            case Right(_) =>
+              val html = os.read(destination)
+              assert(html.contains("foo"))
+              assert(!html.contains("bar"))
+            case Left(failure) =>
+              throw new java.lang.AssertionError(s"report failed: $failure")
+          }
+        }
+      }
     }
   }
 }
