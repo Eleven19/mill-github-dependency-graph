@@ -31,7 +31,8 @@ object DependencyShapesTests extends TestSuite {
             "viaBom",
             "bomOverridesTransitive",
             "runtimeScoped",
-            "everyScope"
+            "everyScope",
+            "declaresCompile"
           )
         )
       }
@@ -79,6 +80,88 @@ object DependencyShapesTests extends TestSuite {
             "org.junit.platform:junit-platform-suite-commons:1.11.4"
           )
         )
+      }
+    }
+
+    test("scope flags") {
+
+      test("--scope compile omits the runtime-scoped transitive") {
+        Fixtures.withFixture("dependency-shapes") { tester =>
+          Fixtures.requireSuccess(
+            Fixtures.generate(tester, "--scope", "compile")
+          )
+          val reported = Fixtures.manifests(tester)("everyScope")
+          assert(
+            !reported.contains(
+              "org.junit.platform:junit-platform-suite-commons:1.11.4"
+            )
+          )
+          assert(!reported.exists(_.startsWith("org.slf4j:slf4j-simple:")))
+          assert(
+            reported.contains(
+              "org.junit.platform:junit-platform-suite-api:1.11.4"
+            )
+          )
+        }
+      }
+
+      test("--scope all adds compileMvnDeps without losing runtime") {
+        Fixtures.withFixture("dependency-shapes") { tester =>
+          Fixtures.requireSuccess(Fixtures.generate(tester, "--scope", "all"))
+          val reported = Fixtures.manifests(tester)("everyScope")
+          assert(reported.contains("org.projectlombok:lombok:1.18.36"))
+          assert(reported.contains("org.slf4j:slf4j-simple:2.0.16"))
+          assert(
+            reported.contains(
+              "org.junit.platform:junit-platform-suite-commons:1.11.4"
+            )
+          )
+        }
+      }
+
+      test("a module's own declaration is honoured with no flag") {
+        Fixtures.withFixture("dependency-shapes") { tester =>
+          Fixtures.requireSuccess(Fixtures.generate(tester))
+          val reported = Fixtures.manifests(tester)
+          // `declaresCompile` asked for compile...
+          assert(
+            !reported("declaresCompile").contains(
+              "org.junit.platform:junit-platform-suite-commons:1.11.4"
+            )
+          )
+          // ...while its neighbour, same dependency, stayed at runtime.
+          assert(
+            reported("runtimeScoped").contains(
+              "org.junit.platform:junit-platform-suite-commons:1.11.4"
+            )
+          )
+        }
+      }
+
+      test("a passed flag beats the module's declaration") {
+        Fixtures.withFixture("dependency-shapes") { tester =>
+          Fixtures.requireSuccess(
+            Fixtures.generate(tester, "--scope", "runtime")
+          )
+          val reported = Fixtures.manifests(tester)("declaresCompile")
+          assert(
+            reported.contains(
+              "org.junit.platform:junit-platform-suite-commons:1.11.4"
+            )
+          )
+        }
+      }
+
+      test("an unknown scope fails and names the valid values") {
+        Fixtures.withFixture("dependency-shapes") { tester =>
+          val result = Fixtures.generate(tester, "--scope", "nonsense")
+          assert(!result.isSuccess)
+          val output = result.out + result.err
+          assert(output.contains("nonsense"))
+          assert(output.contains("compile"))
+          assert(output.contains("runtime"))
+          assert(output.contains("all"))
+        }
       }
     }
   }

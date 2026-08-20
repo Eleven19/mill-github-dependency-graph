@@ -55,3 +55,17 @@ object everyScope extends Fixture {
   override def runMvnDeps = Seq(mvn"org.slf4j:slf4j-simple:2.0.16")
   override def compileMvnDeps = Seq(mvn"org.projectlombok:lombok:1.18.36")
 }
+
+/** Proves `GraphScopeModule` is usable from a consumer build file, which no
+  * unit test can show: the trait has to be importable from the published
+  * artifact and mixable into an ordinary module.
+  */
+object declaresCompile extends Fixture
+    with io.eleven19.mill.github.dependency.graph.GraphScopeModule {
+  override def dependencyGraphScope = Task {
+    io.eleven19.mill.github.dependency.graph.GraphScope.Compile
+  }
+  override def mvnDeps = Seq(
+    mvn"org.junit.platform:junit-platform-suite-engine:1.11.4"
+  )
+}
