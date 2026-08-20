@@ -75,3 +75,46 @@ jobs:
     - name: Integration test
       run:
         ./mill -i integration.test
+
+  # Renders this repository's own dependency graph and keeps it as an
+  # artifact, so a change to the renderer can be looked at rather than
+  # imagined. Never fails the build on the report's contents — that is what
+  # HtmlReportTests is for; this is here to be opened.
+  report:
+    runs-on: 'ubuntu-latest'
+
+    steps:
+    - uses: actions/checkout@v7
+    - uses: actions/setup-java@v5
+      with:
+        distribution: 'temurin'
+        java-version: '21'
+
+    # `-i` is load-bearing throughout this job, not stylistic. Mill's resident
+    # daemon does not pick up environment changes between invocations, and a
+    # publish that quietly used the wrong version would leave the next step
+    # resolving the released plugin from Central and rendering a report that
+    # looks fine and reflects nothing in this branch.
+    - name: Publish this branch's plugin locally
+      run:
+        ./mill -i '{plugin,domain,report}.publishLocal'
+
+    # Point the build at what we just published, rather than publishing over
+    # the released version and hoping the local repository wins. If the step
+    # above failed, resolution now fails loudly instead of silently falling
+    # back to Central.
+    - name: Use it instead of the released plugin
+      run: |
+        sed -i 's|mill-github-dependency-graph_mill$MILL_BIN_PLATFORM:[^"]*|mill-github-dependency-graph_mill$MILL_BIN_PLATFORM:0.1.0-SNAPSHOT|' build.mill.yaml
+        grep -n 'mill-github-dependency-graph_mill' build.mill.yaml
+
+    - name: Generate the report
+      run:
+        ./mill -i io.eleven19.mill.github.dependency.graph.Graph/report --output graph-report.html
+
+    - uses: actions/upload-artifact@v7
+      with:
+        name: dependency-graph-report
+        path: graph-report.html
+        if-no-files-found: error
+
