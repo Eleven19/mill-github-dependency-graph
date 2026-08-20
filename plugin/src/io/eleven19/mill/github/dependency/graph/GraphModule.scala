@@ -24,7 +24,7 @@ trait GraphModule extends ExternalModule {
   def generate(ev: Evaluator): Task.Command[Map[String, domain.Manifest]] =
     Task.Command(exclusive = true) {
       val modules = Resolver.computeModules(ev)
-      val moduleTrees = Resolver.resolveModuleTrees(ev, modules)
+      val moduleTrees = Resolver.resolveModuleTrees(ev, modules, None)
       val manifests: Map[String, domain.Manifest] =
         moduleTrees.map(mt => (mt.module.toString(), mt.toManifest())).toMap
 

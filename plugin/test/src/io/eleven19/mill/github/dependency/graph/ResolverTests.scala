@@ -26,6 +26,8 @@ object ResolverTests extends TestSuite {
   private val jacksonBomVersion = "2.18.2"
   private val jacksonPinnedVersion = "2.15.0"
   private val junitPlatformVersion = "1.11.4"
+  private val slf4jVersion = "2.0.16"
+  private val lombokVersion = "1.18.36"
 
   object testBuild extends TestRootModule {
 
@@ -79,6 +81,26 @@ object ResolverTests extends TestSuite {
       )
     }
 
+    /** Has a dependency in every scope that matters, so one module can show
+      * what each setting includes and excludes.
+      *
+      * - `junit-platform-suite-engine` brings `junit-platform-suite-commons`
+      *   at runtime scope and `junit-platform-suite-api` at compile scope.
+      * - `slf4j-simple` is a `runMvnDeps`, filed by `coursierProject` under
+      *   the runtime configuration only.
+      * - `lombok` is a `compileMvnDeps`, filed under provided.
+      */
+    object everyScope extends ScalaModule {
+      def scalaVersion = scala3
+      override def mvnDeps = Seq(
+        mvn"org.junit.platform:junit-platform-suite-engine:$junitPlatformVersion"
+      )
+      override def runMvnDeps = Seq(mvn"org.slf4j:slf4j-simple:$slf4jVersion")
+      override def compileMvnDeps = Seq(
+        mvn"org.projectlombok:lombok:$lombokVersion"
+      )
+    }
+
     lazy val millDiscover = Discover[this.type]
   }
 
@@ -89,9 +111,13 @@ object ResolverTests extends TestSuite {
     * fail its own tests only, rather than taking the unrelated scenarios down
     * with it and hiding what each was meant to show.
     */
-  private def manifestOf(module: mill.javalib.JavaModule): domain.Manifest =
+  private def manifestOf(
+      module: mill.javalib.JavaModule,
+      scope: Option[GraphScope] = None
+  ): domain.Manifest =
     UnitTester(testBuild, null).scoped { eval =>
-      val moduleTrees = Resolver.resolveModuleTrees(eval.evaluator, Seq(module))
+      val moduleTrees =
+        Resolver.resolveModuleTrees(eval.evaluator, Seq(module), scope)
 
       // `toManifest` needs a task context, so it runs inside a task of its own
       // rather than in the bare test body.
@@ -238,6 +264,97 @@ object ResolverTests extends TestSuite {
       }
     }
 
+    test("scope") {
+
+      test("compile omits the runtime-scoped transitive") {
+        val all = manifestOf(
+          testBuild.everyScope,
+          Some(GraphScope.Compile)
+        ).resolved.keySet
+        assert(
+          !all.contains(
+            s"org.junit.platform:junit-platform-suite-commons:$junitPlatformVersion"
+          )
+        )
+      }
+
+      test("compile omits runMvnDeps") {
+        // `coursierProject` files runMvnDeps under the runtime configuration
+        // alone, so at compile scope they are not in the resolution and must
+        // not be tree roots either.
+        val all = manifestOf(
+          testBuild.everyScope,
+          Some(GraphScope.Compile)
+        ).resolved.keySet
+        assert(!all.exists(_.startsWith("org.slf4j:slf4j-simple:")))
+      }
+
+      test("compile keeps the compile-scoped transitives") {
+        val all = manifestOf(
+          testBuild.everyScope,
+          Some(GraphScope.Compile)
+        ).resolved.keySet
+        assert(
+          all.contains(
+            s"org.junit.platform:junit-platform-suite-api:$junitPlatformVersion"
+          )
+        )
+      }
+
+      test("runtime adds the runtime-scoped transitive and runMvnDeps") {
+        val all = manifestOf(
+          testBuild.everyScope,
+          Some(GraphScope.Runtime)
+        ).resolved.keySet
+        assert(
+          all.contains(
+            s"org.junit.platform:junit-platform-suite-commons:$junitPlatformVersion"
+          )
+        )
+        assert(all.contains(s"org.slf4j:slf4j-simple:$slf4jVersion"))
+      }
+
+      test("runtime still omits compileMvnDeps") {
+        val all = manifestOf(
+          testBuild.everyScope,
+          Some(GraphScope.Runtime)
+        ).resolved.keySet
+        assert(!all.exists(_.startsWith("org.projectlombok:lombok:")))
+      }
+
+      test("all adds compileMvnDeps without losing runtime") {
+        val all =
+          manifestOf(testBuild.everyScope, Some(GraphScope.All)).resolved.keySet
+        assert(all.contains(s"org.projectlombok:lombok:$lombokVersion"))
+        assert(
+          all.contains(
+            s"org.junit.platform:junit-platform-suite-commons:$junitPlatformVersion"
+          )
+        )
+        assert(all.contains(s"org.slf4j:slf4j-simple:$slf4jVersion"))
+      }
+
+      test("no scope means runtime") {
+        val implied = manifestOf(testBuild.everyScope).resolved.keySet
+        val explicit = manifestOf(
+          testBuild.everyScope,
+          Some(GraphScope.Runtime)
+        ).resolved.keySet
+        assert(implied == explicit)
+      }
+
+      test("every scope produces a manifest at all") {
+        // The invariant bug #12 broke: if a tree root is absent from the
+        // resolution's reconciled versions, coursier throws out of
+        // `DependencyTree.Node.dependency` and takes the whole run down.
+        // Asserting it per scope stops a new scope reintroducing the bug.
+        GraphScope.values.foreach { scope =>
+          val resolved = manifestOf(testBuild.everyScope, Some(scope)).resolved
+          assert(resolved.nonEmpty)
+        }
+      }
+    }
+
     test("every JavaModule in the build is discovered") {
       // Guards `computeModules` independently of resolution, so a resolution
       // failure cannot be mistaken for a discovery failure.
@@ -249,7 +366,8 @@ object ResolverTests extends TestSuite {
           "viaDepManagement",
           "viaBom",
           "bomOverridesTransitive",
-          "viaRuntimeScope"
+          "viaRuntimeScope",
+          "everyScope"
         )
       )
     }
