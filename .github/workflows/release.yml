@@ -14,6 +14,9 @@ on:
 jobs:
   publish:
     runs-on: ubuntu-latest
+    # `gh release create` writes to the repository.
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v7
         with:
@@ -34,6 +37,26 @@ jobs:
             echo "version=${TAG}" >> "$GITHUB_OUTPUT"
           fi
 
+      # Runs BEFORE the publish on purpose. A Maven Central release can never
+      # be replaced or re-cut, so a version that would ship without notes has
+      # to fail while failing is still free.
+      - name: Verify release notes exist
+        id: notes
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          FILE="docs/release-notes/v${VERSION}.md"
+          if [ ! -f "$FILE" ]; then
+            echo "::error::No release notes at $FILE. Every release ships notes; add the file and try again."
+            exit 1
+          fi
+          TITLE="$(head -n 1 "$FILE" | sed 's/^# *//')"
+          if [ -z "$TITLE" ]; then
+            echo "::error::$FILE has no title on its first line. Expected a leading '# ' heading."
+            exit 1
+          fi
+          echo "file=${FILE}" >> "$GITHUB_OUTPUT"
+          echo "title=${TITLE}" >> "$GITHUB_OUTPUT"
+
       - name: Publish to Maven Central
         run: |
           export PUBLISH_VERSION="${{ steps.version.outputs.version }}"
@@ -47,3 +70,14 @@ jobs:
           SONATYPE_PASSWORD: ${{ secrets.ELEVEN19_SONATYPE_PASSWORD }}
           PGP_SECRET: ${{ secrets.ELEVEN19_IO_PGP_SECRET_BASE64 }}
           PGP_PASSPHRASE: ${{ secrets.ELEVEN19_IO_PGP_PASSPHRASE }}
+
+      # Last, because it is the announcement. If the publish failed there is
+      # nothing to announce, and a release pointing at absent artifacts is
+      # worse than no release.
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "v${{ steps.version.outputs.version }}" \
+            --title "${{ steps.notes.outputs.title }}" \
+            --notes-file "${{ steps.notes.outputs.file }}"
