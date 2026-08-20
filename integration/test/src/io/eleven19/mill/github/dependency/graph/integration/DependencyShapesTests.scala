@@ -16,8 +16,8 @@ object DependencyShapesTests extends TestSuite {
       // Also covers issue #4: the `_mill1_3` coordinate has to resolve from a
       // `//|` header, which no unit test can check.
       Fixtures.withFixture("dependency-shapes") { tester =>
-        val result = Fixtures.requireSuccess(Fixtures.generate(tester))
-        assert(result.isSuccess)
+        // `requireSuccess` already throws if this failed.
+        Fixtures.requireSuccess(Fixtures.generate(tester))
       }
     }
 
@@ -90,7 +90,8 @@ object DependencyShapesTests extends TestSuite {
           Fixtures.requireSuccess(
             Fixtures.generate(tester, "--scope", "compile")
           )
-          val reported = Fixtures.manifests(tester)("everyScope")
+          val manifests = Fixtures.manifests(tester)
+          val reported = manifests("everyScope")
           assert(
             !reported.contains(
               "org.junit.platform:junit-platform-suite-commons:1.11.4"
@@ -102,18 +103,32 @@ object DependencyShapesTests extends TestSuite {
               "org.junit.platform:junit-platform-suite-api:1.11.4"
             )
           )
+          // This repo's own build has no BOMs, so it can never dogfood the
+          // BOM-version path -- only the fixture can. Asserted here too, not
+          // just at the default scope, so a scope flag cannot regress it.
+          assert(
+            manifests("viaBom").contains(
+              "com.fasterxml.jackson.core:jackson-databind:2.18.2"
+            )
+          )
         }
       }
 
       test("--scope all adds compileMvnDeps without losing runtime") {
         Fixtures.withFixture("dependency-shapes") { tester =>
           Fixtures.requireSuccess(Fixtures.generate(tester, "--scope", "all"))
-          val reported = Fixtures.manifests(tester)("everyScope")
+          val manifests = Fixtures.manifests(tester)
+          val reported = manifests("everyScope")
           assert(reported.contains("org.projectlombok:lombok:1.18.36"))
           assert(reported.contains("org.slf4j:slf4j-simple:2.0.16"))
           assert(
             reported.contains(
               "org.junit.platform:junit-platform-suite-commons:1.11.4"
+            )
+          )
+          assert(
+            manifests("viaBom").contains(
+              "com.fasterxml.jackson.core:jackson-databind:2.18.2"
             )
           )
         }
