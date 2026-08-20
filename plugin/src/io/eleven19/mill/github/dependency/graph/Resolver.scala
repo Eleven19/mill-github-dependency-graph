@@ -41,7 +41,7 @@ object Resolver {
       Task.Anon {
         val bindDep = javaModule.bindDependency()
         def bound(deps: Seq[mill.javalib.Dep]) =
-          deps.map(bindDep).map(_.dep).toSeq
+          deps.map(bindDep).map(_.dep)
 
         val roots = ScopedRoots(
           scope = scopeTask(),

@@ -157,6 +157,42 @@ object ResolverTests extends TestSuite {
   private def indirectOf(manifest: domain.Manifest): Set[String] =
     manifest.resolved.filterNot(_._2.isDirectDependency).keySet
 
+  /** The tree roots `ScopedRoots` computes for `module` at `scope`, the same
+    * way `Resolver.resolveModuleTrees` computes them.
+    *
+    * Deriving the expected roots from `ScopedRoots` rather than hardcoding a
+    * list is what makes the invariant test below cover a fourth scope
+    * automatically: whatever `ScopedRoots.apply` roots that scope at is
+    * exactly what the test checks against.
+    */
+  private def rootsOf(
+      module: mill.javalib.JavaModule,
+      scope: GraphScope
+  ): Seq[coursier.core.Dependency] =
+    UnitTester(testBuild, null).scoped { eval =>
+      val toRoots = Task.Anon {
+        val bindDep = module.bindDependency()
+        def bound(deps: Seq[mill.javalib.Dep]) =
+          deps.map(bindDep).map(_.dep)
+
+        ScopedRoots(
+          scope = scope,
+          synthetic = module.coursierDependencyTask(),
+          allMvnDeps = bound(module.allMvnDeps()),
+          runMvnDeps = bound(module.runMvnDeps()),
+          compileMvnDeps = bound(module.compileMvnDeps())
+        ).trees
+      }
+
+      eval.apply(toRoots) match {
+        case Right(result) => result.value
+        case Left(failure) =>
+          throw new java.lang.AssertionError(
+            s"Computing tree roots failed: $failure"
+          )
+      }
+    }
+
   val tests = Tests {
 
     test("a version from depManagement") {
@@ -354,14 +390,26 @@ object ResolverTests extends TestSuite {
         assert(implied == explicit)
       }
 
-      test("every scope produces a manifest at all") {
-        // The invariant bug #12 broke: if a tree root is absent from the
-        // resolution's reconciled versions, coursier throws out of
-        // `DependencyTree.Node.dependency` and takes the whole run down.
-        // Asserting it per scope stops a new scope reintroducing the bug.
+      test("every scope reports its own tree roots as direct dependencies") {
+        // The #12 invariant, checked directly rather than by proxy: every
+        // dependency a scope declares as a tree root must appear in that
+        // scope's manifest, marked direct. `resolved.nonEmpty` alone would
+        // pass under many wrong scope tables -- scala-library always
+        // resolves regardless. Looping `GraphScope.values` and deriving the
+        // expected roots from `ScopedRoots` (rather than a hardcoded list)
+        // is what makes a fourth scope covered automatically.
         GraphScope.values.foreach { scope =>
-          val resolved = manifestOf(testBuild.everyScope, Some(scope)).resolved
-          assert(resolved.nonEmpty)
+          val manifest = manifestOf(testBuild.everyScope, Some(scope))
+          val direct = directOf(manifest)
+          val roots = rootsOf(testBuild.everyScope, scope)
+
+          assert(roots.nonEmpty)
+          for (root <- roots) {
+            val orgName = root.module.orgName
+            assert(
+              direct.exists(_.startsWith(s"$orgName:"))
+            )
+          }
         }
       }
 
