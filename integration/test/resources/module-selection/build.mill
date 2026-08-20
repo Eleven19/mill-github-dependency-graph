@@ -1,0 +1,35 @@
+//| mvnDeps:
+//| - io.eleven19.mill-github-dependency-graph::mill-github-dependency-graph_mill$MILL_BIN_PLATFORM:@PLUGIN_VERSION@
+
+package build
+
+import mill._, scalalib._
+
+// A nested tree on purpose. The selection rule maps a resolved task segment
+// to its longest known-module prefix, and a flat build would not distinguish
+// that from a shortest-prefix rule that wrongly matched `app` for
+// `app.test.compile`.
+
+trait Fixture extends ScalaModule {
+  def scalaVersion = "3.3.4"
+  override def mvnDeps = Seq(mvn"org.slf4j:slf4j-api:2.0.16")
+}
+
+object app extends Fixture {
+  object test extends ScalaTests with TestModule.Utest {
+    override def mvnDeps = super.mvnDeps() ++ Seq(mvn"com.lihaoyi::utest:0.9.5")
+  }
+}
+
+object lib extends Fixture {
+  object test extends ScalaTests with TestModule.Utest {
+    override def mvnDeps = super.mvnDeps() ++ Seq(mvn"com.lihaoyi::utest:0.9.5")
+  }
+}
+
+/** A plain container, not a `JavaModule`. It must not get a manifest:
+  * `computeModules` collects `JavaModule` only.
+  */
+object tooling extends Module {
+  object sub extends Fixture
+}
