@@ -57,7 +57,7 @@ jobs:
 
     - name: Test
       run:
-        ./mill -i plugin.test
+        ./mill -i '{plugin,report}.test'
 
   integration:
     runs-on: 'ubuntu-latest'
