@@ -1,5 +1,6 @@
 package io.eleven19.mill.github.dependency.graph
 
+import coursier.core.{Configuration, VariantSelector}
 import coursier.graph.DependencyTree
 import mill._
 import mill.api.Evaluator
@@ -25,11 +26,17 @@ object Resolver {
       Task.Anon {
         val bindDep = javaModule.bindDependency()
 
-        // The direct dependencies of the module, which become the roots of the
-        // trees and therefore the "direct" relationships GitHub is shown. These
-        // may carry no version of their own when the module gets it from
-        // `depManagement` or a BOM.
-        val roots = javaModule.allMvnDeps().map(bindDep).map(_.dep).toSeq
+        // Everything below is resolved and walked at the `runtime`
+        // configuration.
+        //
+        // `JavaModule.coursierProject` files each `mvnDeps` entry twice, once
+        // under `compile` and once under `runtime`, and its scope mapping has
+        // `runtime` pull `compile` in as well. Asking for `runtime` therefore
+        // reports a superset of the compile graph, and it is the graph that
+        // matches what actually runs — runtime scope is where SLF4J bindings,
+        // JDBC drivers and much of the JUnit platform live.
+        val runtime =
+          VariantSelector.ConfigurationBased(Configuration.runtime)
 
         // Resolve the module's own synthetic coursier dependency rather than
         // its list of dependencies.
@@ -47,7 +54,36 @@ object Resolver {
         // any managed coordinate and fails with "No version available in (,)".
         val resolution = javaModule
           .millResolver()
-          .resolution(Seq(javaModule.coursierDependencyTask()))
+          .resolution(
+            Seq(
+              javaModule.coursierDependencyTask().withVariantSelector(runtime)
+            )
+          )
+
+        // The direct dependencies of the module, which become the roots of the
+        // trees and therefore the "direct" relationships GitHub is shown. These
+        // may carry no version of their own when the module gets it from
+        // `depManagement` or a BOM.
+        //
+        // They are stamped with the same configuration the synthetic project
+        // files them under, so each root is the very dependency the resolution
+        // walked. A root left unconfigured is defaulted by coursier to
+        // `default(runtime)` instead, and `DependencyTree` then walks scopes
+        // the resolution never visited and throws "Cannot find ... in
+        // reconciled versions" on the first node only that walk reaches.
+        // Variant-attribute dependencies select by Gradle attributes rather
+        // than by configuration, and `coursierProject` leaves those alone.
+        def rooted(dep: coursier.core.Dependency) =
+          if (dep.isVariantAttributesBased) dep
+          else dep.withVariantSelector(runtime)
+
+        // `runMvnDeps` are direct dependencies of the module too, and the
+        // runtime resolution covers them, so they are roots like the rest.
+        val roots =
+          (javaModule.allMvnDeps() ++ javaModule.runMvnDeps())
+            .map(bindDep)
+            .map(bound => rooted(bound.dep))
+            .toSeq
 
         // The roots are children of the synthetic module dependency, not the
         // resolution's own root, so they are passed explicitly to keep the

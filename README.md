@@ -106,13 +106,25 @@ dependencies](https://docs.github.com/en/code-security/supply-chain-security/und
 The plugin works in a few steps:
 
 1. Gather all the `JavaModule`s in your build
-2. Gather all direct and transitive dependencies of those modules
+2. Gather all direct and transitive dependencies of those modules, at the
+   runtime scope
 3. Create a tree-like structure of these dependencies using coursier's
    `DependencyTree` functionality
 4. Map this structure to a
    [`DependencySnapshot`](domain/src/io/eleven19/github/dependency/graph/domain/DependencySnapshot.scala),
    which is what the GitHub API expects
 5. POST the snapshot to GitHub's Dependency Submission API
+
+### What the graph covers
+
+Each module is resolved at the Maven `runtime` scope. That scope contains the
+`compile` scope, so the graph holds every dependency you compile against and
+also the ones that only appear when the code runs: SLF4J bindings, JDBC
+drivers, most of the JUnit platform. These are the dependencies GitHub needs
+to alert you about, so they belong in the graph.
+
+`mvnDeps` and `runMvnDeps` are reported as direct dependencies.
+`compileMvnDeps` are provided-scope only and are not reported.
 
 ### Limitations
 
