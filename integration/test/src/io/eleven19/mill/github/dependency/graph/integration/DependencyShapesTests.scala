@@ -22,67 +22,55 @@ object DependencyShapesTests extends TestSuite {
     }
 
     test("every fixture module gets a manifest") {
-      Fixtures.withFixture("dependency-shapes") { tester =>
-        Fixtures.requireSuccess(Fixtures.generate(tester))
-        val reported = Fixtures.manifests(tester).keySet
-        assert(
-          reported == Set(
-            "viaDepManagement",
-            "viaBom",
-            "bomOverridesTransitive",
-            "runtimeScoped",
-            "everyScope",
-            "declaresCompile",
-            "internalLib",
-            "dependsOnInternal"
-          )
+      val reported = Fixtures.defaultManifests("dependency-shapes").keySet
+      assert(
+        reported == Set(
+          "viaDepManagement",
+          "viaBom",
+          "bomOverridesTransitive",
+          "runtimeScoped",
+          "everyScope",
+          "declaresCompile",
+          "internalLib",
+          "dependsOnInternal"
         )
-      }
+      )
     }
 
     test("issue #3: a depManagement version reaches the manifest") {
-      Fixtures.withFixture("dependency-shapes") { tester =>
-        Fixtures.requireSuccess(Fixtures.generate(tester))
-        val reported = Fixtures.manifests(tester)("viaDepManagement")
-        assert(reported.contains("dev.zio:zio-test_3:2.1.14"))
-      }
+      val reported =
+        Fixtures.defaultManifests("dependency-shapes")("viaDepManagement")
+      assert(reported.contains("dev.zio:zio-test_3:2.1.14"))
     }
 
     test("issue #3: a BOM version reaches the manifest") {
-      Fixtures.withFixture("dependency-shapes") { tester =>
-        Fixtures.requireSuccess(Fixtures.generate(tester))
-        val reported = Fixtures.manifests(tester)("viaBom")
-        assert(
-          reported.contains(
-            "com.fasterxml.jackson.core:jackson-databind:2.18.2"
-          )
+      val reported = Fixtures.defaultManifests("dependency-shapes")("viaBom")
+      assert(
+        reported.contains(
+          "com.fasterxml.jackson.core:jackson-databind:2.18.2"
         )
-      }
+      )
     }
 
     test("a BOM-raised transitive is reported at the BOM's version") {
-      Fixtures.withFixture("dependency-shapes") { tester =>
-        Fixtures.requireSuccess(Fixtures.generate(tester))
-        val reported = Fixtures.manifests(tester)("bomOverridesTransitive")
-        assert(
-          reported.contains("com.fasterxml.jackson.core:jackson-core:2.18.2")
-        )
-        assert(
-          !reported.contains("com.fasterxml.jackson.core:jackson-core:2.15.0")
-        )
-      }
+      val reported =
+        Fixtures.defaultManifests("dependency-shapes")("bomOverridesTransitive")
+      assert(
+        reported.contains("com.fasterxml.jackson.core:jackson-core:2.18.2")
+      )
+      assert(
+        !reported.contains("com.fasterxml.jackson.core:jackson-core:2.15.0")
+      )
     }
 
     test("issue #12: a runtime-scoped transitive reaches the manifest") {
-      Fixtures.withFixture("dependency-shapes") { tester =>
-        Fixtures.requireSuccess(Fixtures.generate(tester))
-        val reported = Fixtures.manifests(tester)("runtimeScoped")
-        assert(
-          reported.contains(
-            "org.junit.platform:junit-platform-suite-commons:1.11.4"
-          )
+      val reported =
+        Fixtures.defaultManifests("dependency-shapes")("runtimeScoped")
+      assert(
+        reported.contains(
+          "org.junit.platform:junit-platform-suite-commons:1.11.4"
         )
-      }
+      )
     }
 
     test("dependencies reached through moduleDeps") {
@@ -91,11 +79,9 @@ object DependencyShapesTests extends TestSuite {
         // The gap this closes was found in this repo's own graph: `plugin`
         // depends on `report`, `report` depends on scalatags, and `plugin`'s
         // manifest denied it. A consumer of the published artifact gets it.
-        Fixtures.withFixture("dependency-shapes") { tester =>
-          Fixtures.requireSuccess(Fixtures.generate(tester))
-          val reported = Fixtures.manifests(tester)("dependsOnInternal")
-          assert(reported.contains("com.lihaoyi:sourcecode_3:0.4.2"))
-        }
+        val reported =
+          Fixtures.defaultManifests("dependency-shapes")("dependsOnInternal")
+        assert(reported.contains("com.lihaoyi:sourcecode_3:0.4.2"))
       }
 
       test("--no-module-deps leaves them out") {
@@ -167,22 +153,19 @@ object DependencyShapesTests extends TestSuite {
       }
 
       test("a module's own declaration is honoured with no flag") {
-        Fixtures.withFixture("dependency-shapes") { tester =>
-          Fixtures.requireSuccess(Fixtures.generate(tester))
-          val reported = Fixtures.manifests(tester)
-          // `declaresCompile` asked for compile...
-          assert(
-            !reported("declaresCompile").contains(
-              "org.junit.platform:junit-platform-suite-commons:1.11.4"
-            )
+        val reported = Fixtures.defaultManifests("dependency-shapes")
+        // `declaresCompile` asked for compile...
+        assert(
+          !reported("declaresCompile").contains(
+            "org.junit.platform:junit-platform-suite-commons:1.11.4"
           )
-          // ...while its neighbour, same dependency, stayed at runtime.
-          assert(
-            reported("runtimeScoped").contains(
-              "org.junit.platform:junit-platform-suite-commons:1.11.4"
-            )
+        )
+        // ...while its neighbour, same dependency, stayed at runtime.
+        assert(
+          reported("runtimeScoped").contains(
+            "org.junit.platform:junit-platform-suite-commons:1.11.4"
           )
-        }
+        )
       }
 
       test("a passed flag beats the module's declaration") {
@@ -235,6 +218,23 @@ object DependencyShapesTests extends TestSuite {
             }
           assert(parsed.obj.contains("viaDepManagement"))
           assert(content.contains("dev.zio:zio-test_3:2.1.14"))
+        }
+      }
+
+      test("submit --output writes the manifests before it tries to POST") {
+        // `submit` gained `--output` with no coverage at any tier. Twice on
+        // this project a forwarded parameter has been silently dropped with
+        // every test still green, so it is worth a case even though `submit`
+        // itself cannot succeed here: with no GitHub credentials it fails at
+        // the POST, and the file `generate` already wrote is the assertion.
+        Fixtures.withFixture("dependency-shapes") { tester =>
+          val destination = tester.workspacePath / "submitted.json"
+          val result = Fixtures.submit(tester, "--output", destination.toString)
+
+          assert(!result.isSuccess)
+          assert(os.exists(destination))
+          val parsed = ujson.read(os.read(destination))
+          assert(parsed.obj.contains("viaDepManagement"))
         }
       }
 

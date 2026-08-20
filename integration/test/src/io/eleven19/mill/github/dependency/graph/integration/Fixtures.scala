@@ -13,6 +13,31 @@ import mill.testkit.IntegrationTester
   */
 object Fixtures {
 
+  private val defaultRuns =
+    scala.collection.mutable.Map.empty[String, Map[String, Set[String]]]
+
+  /** One no-flag `generate` over a fixture, run once and reused.
+    *
+    * Several tests assert on different parts of the same output. Each used to
+    * spawn its own Mill subprocess against a fresh workspace, which was most
+    * of this suite's runtime for no extra coverage — the input is identical,
+    * so the output is too.
+    *
+    * Runs that pass flags are deliberately NOT shared: different input,
+    * different output, and collapsing them would weaken the tests rather than
+    * speed them up.
+    */
+  def defaultManifests(name: String): Map[String, Set[String]] =
+    synchronized {
+      defaultRuns.getOrElseUpdate(
+        name,
+        withFixture(name) { tester =>
+          requireSuccess(generate(tester))
+          manifests(tester)
+        }
+      )
+    }
+
   private def resource(name: String): os.Path = {
     val url = Option(getClass.getClassLoader.getResource(name)).getOrElse(
       throw new java.lang.AssertionError(
@@ -82,6 +107,19 @@ object Fixtures {
 
   private val generateSelector =
     "io.eleven19.mill.github.dependency.graph.Graph/generate"
+
+  private val submitSelector =
+    "io.eleven19.mill.github.dependency.graph.Graph/submit"
+
+  /** `submit` cannot succeed outside GitHub Actions — it needs a token and the
+    * run's identity. It still writes `--output` first, which is the part worth
+    * covering.
+    */
+  def submit(
+      tester: IntegrationTester,
+      args: String*
+  ): IntegrationTester.EvalResult =
+    run(submitSelector, tester, args)
 
   private val reportSelector =
     "io.eleven19.mill.github.dependency.graph.Graph/report"
