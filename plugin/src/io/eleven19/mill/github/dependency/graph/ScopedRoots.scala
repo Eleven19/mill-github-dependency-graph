@@ -21,9 +21,16 @@ import coursier.core.{Configuration, Dependency, VariantSelector}
   */
 private[graph] object ScopedRoots {
 
+  /** @param resolution what the coursier resolution is rooted at
+    * @param trees the module's own dependencies, reported as direct
+    * @param indirectTrees dependencies reached through internal `moduleDeps`,
+    *   reported as indirect — the module never declared them, but a consumer
+    *   of the module gets them on the classpath
+    */
   final case class Roots(
       resolution: Seq[Dependency],
-      trees: Seq[Dependency]
+      trees: Seq[Dependency],
+      indirectTrees: Seq[Dependency] = Nil
   )
 
   private val compile =
@@ -50,24 +57,35 @@ private[graph] object ScopedRoots {
     *   `bomMvnDeps`, which is why resolution is rooted there rather than at a
     *   loose list of dependencies.
     */
+  /** @param moduleDepAllMvnDeps the `allMvnDeps` of every module reached
+    *   through internal `moduleDeps`, already bound. Same for the other two
+    *   `moduleDep*` lists. Empty when module deps are excluded, which is how
+    *   the opt-out is expressed — the scope table does not branch on it.
+    */
   def apply(
       scope: GraphScope,
       synthetic: Dependency,
       allMvnDeps: Seq[Dependency],
       runMvnDeps: Seq[Dependency],
-      compileMvnDeps: Seq[Dependency]
+      compileMvnDeps: Seq[Dependency],
+      moduleDepAllMvnDeps: Seq[Dependency] = Nil,
+      moduleDepRunMvnDeps: Seq[Dependency] = Nil,
+      moduleDepCompileMvnDeps: Seq[Dependency] = Nil
   ): Roots =
     scope match {
       case GraphScope.Compile =>
         Roots(
           resolution = Seq(synthetic.withVariantSelector(compile)),
-          trees = stamp(allMvnDeps, compile)
+          trees = stamp(allMvnDeps, compile),
+          indirectTrees = stamp(moduleDepAllMvnDeps, compile)
         )
 
       case GraphScope.Runtime =>
         Roots(
           resolution = Seq(synthetic.withVariantSelector(runtime)),
-          trees = stamp(allMvnDeps ++ runMvnDeps, runtime)
+          trees = stamp(allMvnDeps ++ runMvnDeps, runtime),
+          indirectTrees =
+            stamp(moduleDepAllMvnDeps ++ moduleDepRunMvnDeps, runtime)
         )
 
       case GraphScope.All =>

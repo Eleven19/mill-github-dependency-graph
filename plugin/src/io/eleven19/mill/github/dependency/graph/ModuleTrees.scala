@@ -13,10 +13,14 @@ import scala.util.Try
   * @param module The module
   * @param dependencyTrees The dependency Trees belonging to the module
   * NOTE: that the roots of the trees are the direct dependencies.
+  * @param indirectTrees Trees rooted at dependencies the module picks up
+  * through its internal `moduleDeps`. Their roots are reported as indirect:
+  * the module never declared them, but a consumer of the module gets them.
   */
 final case class ModuleTrees(
     module: JavaModule,
-    dependencyTrees: Seq[DependencyTree]
+    dependencyTrees: Seq[DependencyTree],
+    indirectTrees: Seq[DependencyTree] = Nil
 ) {
 
   /** Takes the dependencyTrees and flattens them to fit the model of the
@@ -159,7 +163,11 @@ final case class ModuleTrees(
       }
     }
 
+    // Direct first, so a dependency that is both declared here and reachable
+    // through a module dep stays direct: the `Some(_) => skip` branch below
+    // leaves an already-direct node alone when it is revisited as indirect.
     dependencyTrees.foreach(toNode(_, root = true))
+    indirectTrees.foreach(toNode(_, root = false))
     allDependencies.toMap
   }
 

@@ -159,13 +159,18 @@ out of the box the plugin covers every module in your build, at runtime scope.
 | `--scope` | `compile`, `runtime`, `all` | unset — each module decides (see `dependencyGraphScope`) | How much of each module's dependency graph to report |
 | `--modules` | Mill selectors, repeatable | every module | Only cover the modules these selectors name |
 | `--exclude-modules` | Mill selectors, repeatable | nothing excluded | Drop modules, applied after `--modules` |
+| `--no-module-deps` | flag | off — module deps are included | Leave out dependencies reached through internal `moduleDeps` |
 | `--output` | a file path | `generate`/`submit`: unset — nothing extra is written; only Mill's own `out/…/generate.json` exists. `report`: unset — the command's own `out/…/report.dest/graph-report.html` | `generate`/`submit`: also write the manifests as JSON to this path, as a copy — Mill's own `out/…/generate.json` is written either way. `report`: writes the HTML page to this path *instead of* its default location — no `report.dest/` is created. A relative path resolves against the workspace root for all three. |
 
 There is also one build-file setting:
 
+Two settings live in the build file instead, on the `DependencyGraphModule`
+trait:
+
 | Setting | Type | Default | What it does |
 |---|---|---|---|
-| `dependencyGraphScope` | `GraphScope` | `GraphScope.Runtime` | Per-module scope, from the `GraphScopeModule` trait |
+| `dependencyGraphScope` | `GraphScope` | `GraphScope.Runtime` | Which scope this module resolves at |
+| `includeModuleDeps` | `Boolean` | `true` | Whether this module reports what it picks up through internal `moduleDeps` |
 
 ### `--scope` — how much of each module to report
 
@@ -200,16 +205,16 @@ its own `[error]` prefix, with a stack trace:
 java.lang.IllegalArgumentException: Unknown scope 'runtim'. Expected one of: compile, runtime, all.
 ```
 
-### `dependencyGraphScope` — a different scope for one module
+### `DependencyGraphModule` — settings for one module
 
 Sometimes one module deserves a different answer from the rest of the build.
-Mix `GraphScopeModule` into it and override `dependencyGraphScope`:
+Mix `DependencyGraphModule` into it and override what you need:
 
 ```scala
 import mill._, scalalib._
-import io.eleven19.mill.github.dependency.graph.{GraphScope, GraphScopeModule}
+import io.eleven19.mill.github.dependency.graph.{GraphScope, DependencyGraphModule}
 
-object server extends ScalaModule with GraphScopeModule {
+object server extends ScalaModule with DependencyGraphModule {
   // This module ships in a container that supplies the servlet API, so its
   // compileMvnDeps are worth reporting even though the rest of the build's
   // are not.
@@ -217,7 +222,12 @@ object server extends ScalaModule with GraphScopeModule {
 }
 ```
 
-Modules that do not mix in the trait use `GraphScope.Runtime`.
+Modules that do not mix in the trait get the defaults: `GraphScope.Runtime`,
+and module deps included.
+
+> **`GraphScopeModule` was the old name** and still works, so builds written
+> against `0.2.0` keep compiling. It is deprecated: it now means exactly
+> `DependencyGraphModule`, which also carries `includeModuleDeps`.
 
 > **When to reach for the trait instead of the flag.** The flag is for one
 > run; the trait is for a fact about your build that should stay true whoever
@@ -236,6 +246,38 @@ different from passing nothing:
 
 So `--scope runtime` is not a no-op — it is how you force one scope across the
 whole build, ignoring what individual modules asked for.
+
+### `--no-module-deps` — dependencies from internal `moduleDeps`
+
+If `app` has `moduleDeps = Seq(lib)` and `lib` depends on Jackson, then
+anyone consuming `app` gets Jackson on their classpath — `app` never declared
+it, but it is there. `app`'s manifest reports it, marked **indirect**.
+
+The internal module itself is not reported. `lib` is a module in your build,
+not a Maven coordinate, so it has no purl and cannot be a node in the graph.
+What GitHub needs to know is which *libraries* end up on the classpath, and
+those are what get reported.
+
+Pass `--no-module-deps` to leave them out:
+
+```sh
+./mill io.eleven19.mill.github.dependency.graph.Graph/submit --no-module-deps
+```
+
+> **Why you might want to.** Every module's dependencies are repeated in the
+> manifest of every module that depends on it. On a deep internal graph that
+> multiplies the payload — a shared `core` module's 50 dependencies appear
+> once per dependent. If you hit GitHub's request size limits, this is the
+> lever.
+>
+> **Why the default is on.** Leaving them out understates what a module
+> depends on. Someone checking "did `app` pick up the vulnerable Jackson?" by
+> reading `app`'s manifest would be told no, when the answer is yes. Releases
+> up to `0.2.0` behaved that way.
+
+A single module can opt out on its own with `includeModuleDeps`. The flag
+only turns inclusion *off*, never on: it exists as an escape hatch for
+payload size, and there is no reason to overrule a build that asked for less.
 
 ### `--modules` and `--exclude-modules` — which modules to cover
 
@@ -405,10 +447,9 @@ tab, and type the dependency's name into the filter box.
 ./mill io.eleven19.mill.github.dependency.graph.Graph/report
 ```
 
-If it is missing, two things to check before assuming a bug. First, try a
-wider scope — `--scope all`. Second, remember that a dependency you get only
-through a `moduleDeps` edge belongs to *that* module's manifest, not to this
-one (see Limitations).
+If it is missing, try a wider scope — `--scope all` — before assuming a bug.
+Dependencies you pick up through an internal `moduleDeps` edge *are* reported,
+marked indirect, unless you passed `--no-module-deps`.
 
 ### Cover build-time dependencies too
 
@@ -530,14 +571,6 @@ spells out what each scope resolves and why.
 
 ### Limitations
 
-- **`moduleDeps` do not appear in the depending module's manifest.** A
-  manifest's roots are that module's own `mvnDeps`, `runMvnDeps` and
-  `compileMvnDeps`. If `app` depends on `lib`, and `lib` brings in Jackson,
-  Jackson appears under `lib`'s manifest, not under `app`'s. Nothing is lost
-  from the graph as a whole; it is just filed where you may not expect.
-- **`job.html_url` is never populated.** The environment variable lookup for
-  it is misspelled, so the link back to the Actions run is always absent from
-  the submitted snapshot.
 - **The GitHub UI shows less than the plugin sends.** A lot of dependencies
   aren't linked back to the repositories where they are located, some may be
   wrongly linked, and much of the information the plugin provides (like direct
