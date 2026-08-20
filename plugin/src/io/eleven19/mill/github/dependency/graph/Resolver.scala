@@ -15,8 +15,9 @@ object Resolver {
     *
     * @param evaluator Evaluator passed in from the command
     * @param javaModules All the JavaModules to resolve dependencies from
-    * @param scope The scope every module is resolved at. `None` means
-    *   [[GraphScope.Runtime]].
+    * @param scope The scope every module is resolved at. `None` defers to each
+    *   module's own [[GraphScopeModule.dependencyGraphScope]], or
+    *   [[GraphScope.Runtime]] for modules that do not declare one.
     * @return A collection of ModuleTrees
     */
   private[graph] def resolveModuleTrees(
@@ -24,16 +25,26 @@ object Resolver {
       javaModules: Seq[JavaModule],
       scope: Option[GraphScope]
   ): Seq[ModuleTrees] = {
-    val effective = scope.getOrElse(GraphScope.Runtime)
-
     val tasks = javaModules.map { javaModule =>
+      // Built outside the `Task.Anon` below on purpose: Mill's task macro
+      // rejects `someTask()` when the task is chosen by a `val` declared
+      // inside the block.
+      val scopeTask: Task[GraphScope] = scope match {
+        case Some(passed) => Task.Anon(passed)
+        case None =>
+          javaModule match {
+            case scoped: GraphScopeModule => scoped.dependencyGraphScope
+            case _                        => Task.Anon(GraphScope.Runtime)
+          }
+      }
+
       Task.Anon {
         val bindDep = javaModule.bindDependency()
         def bound(deps: Seq[mill.javalib.Dep]) =
           deps.map(bindDep).map(_.dep).toSeq
 
         val roots = ScopedRoots(
-          scope = effective,
+          scope = scopeTask(),
           synthetic = javaModule.coursierDependencyTask(),
           allMvnDeps = bound(javaModule.allMvnDeps()),
           runMvnDeps = bound(javaModule.runMvnDeps()),

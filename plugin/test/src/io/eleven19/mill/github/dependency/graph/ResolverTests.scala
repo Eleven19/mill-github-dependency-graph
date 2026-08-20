@@ -101,6 +101,17 @@ object ResolverTests extends TestSuite {
       )
     }
 
+    /** Declares its own scope, so the graph for this module stays narrow
+      * whatever the rest of the build does.
+      */
+    object declaresCompile extends ScalaModule with GraphScopeModule {
+      def scalaVersion = scala3
+      override def dependencyGraphScope = Task { GraphScope.Compile }
+      override def mvnDeps = Seq(
+        mvn"org.junit.platform:junit-platform-suite-engine:$junitPlatformVersion"
+      )
+    }
+
     lazy val millDiscover = Discover[this.type]
   }
 
@@ -353,6 +364,41 @@ object ResolverTests extends TestSuite {
           assert(resolved.nonEmpty)
         }
       }
+
+      test("a module's own declaration is used when no flag is passed") {
+        val all = manifestOf(testBuild.declaresCompile).resolved.keySet
+        assert(
+          !all.contains(
+            s"org.junit.platform:junit-platform-suite-commons:$junitPlatformVersion"
+          )
+        )
+        assert(
+          all.contains(
+            s"org.junit.platform:junit-platform-suite-api:$junitPlatformVersion"
+          )
+        )
+      }
+
+      test("a passed flag beats the module's declaration") {
+        val all = manifestOf(
+          testBuild.declaresCompile,
+          Some(GraphScope.Runtime)
+        ).resolved.keySet
+        assert(
+          all.contains(
+            s"org.junit.platform:junit-platform-suite-commons:$junitPlatformVersion"
+          )
+        )
+      }
+
+      test("a module without the trait defaults to runtime") {
+        val all = manifestOf(testBuild.everyScope).resolved.keySet
+        assert(
+          all.contains(
+            s"org.junit.platform:junit-platform-suite-commons:$junitPlatformVersion"
+          )
+        )
+      }
     }
 
     test("every JavaModule in the build is discovered") {
@@ -367,7 +413,8 @@ object ResolverTests extends TestSuite {
           "viaBom",
           "bomOverridesTransitive",
           "viaRuntimeScope",
-          "everyScope"
+          "everyScope",
+          "declaresCompile"
         )
       )
     }
