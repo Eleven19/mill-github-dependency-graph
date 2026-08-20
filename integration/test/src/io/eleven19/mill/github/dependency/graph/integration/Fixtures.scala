@@ -34,6 +34,19 @@ object Fixtures {
       )
     )
 
+  /** The Mill version `millExecutable` was built from. Fixtures get this
+    * written as their `.mill-version` rather than pinning one of their own,
+    * so bumping Mill cannot silently load a new-API plugin into an old Mill:
+    * the launcher and the fixture always agree.
+    */
+  private lazy val millVersion: String =
+    sys.env.getOrElse(
+      "MILL_VERSION",
+      throw new java.lang.AssertionError(
+        "MILL_VERSION is not set. Check integration.test.forkEnv."
+      )
+    )
+
   /** The fixture's Mill resolves the plugin from the local test repository,
     * and its own dependencies from central.
     */
@@ -62,6 +75,7 @@ object Fixtures {
         tester.workspacePath / "build.mill",
         _.replace("@PLUGIN_VERSION@", pluginVersion)
       )
+      os.write(tester.workspacePath / ".mill-version", millVersion)
       block(tester)
     } finally tester.close()
   }

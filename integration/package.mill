@@ -39,12 +39,17 @@ object `package` extends _root_.build.CommonScalaModule {
   def testRepo: T[PathRef] = Task {
     val repository = Task.dest / "repository"
     os.makeDir.all(repository)
+    // The first path segment `LocalM2Publisher` lays a module out under is
+    // the organization's first dot-separated component, derived here rather
+    // than hardcoded so a change to `pomSettings().organization` cannot
+    // silently leave this copy looking in the wrong place.
+    val orgRoot = build.plugin.pomSettings().organization.split('.').head
     Seq(
       build.plugin.publishLocalTestRepo(),
       build.domain.publishLocalTestRepo()
     ).foreach { published =>
       os.copy.into(
-        published.path / "io",
+        published.path / orgRoot,
         repository,
         followLinks = true,
         replaceExisting = true,
@@ -84,7 +89,13 @@ object `package` extends _root_.build.CommonScalaModule {
       */
     override def forkEnv = Task {
       super.forkEnv() ++ Map(
-        "PLUGIN_VERSION" -> build.plugin.publishVersion()
+        "PLUGIN_VERSION" -> build.plugin.publishVersion(),
+        // The fixtures' `.mill-version` is written by `Fixtures.withFixture`
+        // from this, not hard-coded in a resource file: `millExecutable`
+        // builds the launcher from `mill.api.BuildInfo.millVersion`, so a
+        // fixture pinned to a stale version would load a plugin compiled
+        // against a newer Mill API into an older Mill.
+        "MILL_VERSION" -> mill.api.BuildInfo.millVersion
       )
     }
   }
