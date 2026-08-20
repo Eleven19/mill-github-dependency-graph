@@ -23,7 +23,10 @@ object `package` extends _root_.build.CommonScalaModule
   override def moduleDeps = Seq(build.domain)
 
   override def compileMvnDeps = super.compileMvnDeps() ++ Seq(
-    mvn"com.lihaoyi::mill-libs-scalalib:${mill.api.BuildInfo.millVersion}"
+    mvn"com.lihaoyi::mill-libs-scalalib:${mill.api.BuildInfo.millVersion}",
+    // `mill.resolve.Resolve` (used by `EvaluatorBridge.resolveSegments`) lives
+    // in `mill-core-resolve`, which `mill-libs-scalalib` does not pull in.
+    mvn"com.lihaoyi::mill-core-resolve:${mill.api.BuildInfo.millVersion}"
   )
 
   override def mvnDeps = super.mvnDeps() ++ Seq(
@@ -45,11 +48,12 @@ object `package` extends _root_.build.CommonScalaModule
 
     // `mill-testkit` gives us a real Mill `Evaluator` over a build defined in
     // test sources, so `Resolver` can be exercised against actual modules.
-    // `mill-libs-scalalib` is only a `compileMvnDeps` of the plugin, so the
-    // tests need it on their own runtime classpath.
+    // `mill-libs-scalalib` and `mill-core-resolve` are only `compileMvnDeps`
+    // of the plugin, so the tests need them on their own runtime classpath.
     override def mvnDeps = super.mvnDeps() ++ Seq(
       mvn"com.lihaoyi::mill-testkit:${mill.api.BuildInfo.millVersion}",
       mvn"com.lihaoyi::mill-libs-scalalib:${mill.api.BuildInfo.millVersion}",
+      mvn"com.lihaoyi::mill-core-resolve:${mill.api.BuildInfo.millVersion}",
       mvn"com.lihaoyi::utest:0.9.5"
     )
 

@@ -130,5 +130,26 @@ object PublishCoordinatesTests extends TestSuite {
       val pom = readPom(env("PLUGIN_M2_REPO"), PluginArtifactId)
       assert(pom.contains(s"<artifactId>$DomainArtifactId</artifactId>"))
     }
+
+    test("the plugin's Mill dependencies stay provided, not runtime") {
+      // `mill-libs-scalalib` and `mill-core-resolve` are `compileMvnDeps`,
+      // which Mill maps to Maven `provided` scope: a consumer's own Mill
+      // supplies them, so they correctly still appear in the pom, just
+      // scoped `provided` rather than left out of it. That mapping is only
+      // convention -- nothing else stops one of them sliding into `mvnDeps`,
+      // which would either drop the `<scope>` tag or change it, and every
+      // consumer would then pull our pinned Mill jars in transitively,
+      // clashing with their own Mill version.
+      val pom = readPom(env("PLUGIN_M2_REPO"), PluginArtifactId)
+
+      def isProvided(artifactId: String): Boolean =
+        pom
+          .split("<dependency>")
+          .find(_.contains(s"<artifactId>$artifactId</artifactId>"))
+          .exists(_.contains("<scope>provided</scope>"))
+
+      assert(isProvided("mill-libs-scalalib_3"))
+      assert(isProvided("mill-core-resolve_3"))
+    }
   }
 }

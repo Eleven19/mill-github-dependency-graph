@@ -10,7 +10,14 @@ trait CommonScalaModule extends ScalaModule
     with ScalafmtModule {
 
   def scalaVersion = scala3
-  def scalacOptions = Seq("-deprecation")
+  def scalacOptions = Seq(
+    "-deprecation",
+    // A fourth GraphScope value would otherwise leave ScopedRoots.apply's
+    // match non-exhaustive with only a warning, silently unparseable and
+    // silently unresolved at runtime -- a MatchError instead of a build
+    // failure.
+    "-Wconf:msg=match may not be exhaustive:e"
+  )
 }
 
 trait PublishSupport extends PublishModule with SonatypeCentralPublishModule {

@@ -26,6 +26,8 @@ object ResolverTests extends TestSuite {
   private val jacksonBomVersion = "2.18.2"
   private val jacksonPinnedVersion = "2.15.0"
   private val junitPlatformVersion = "1.11.4"
+  private val slf4jVersion = "2.0.16"
+  private val lombokVersion = "1.18.36"
 
   object testBuild extends TestRootModule {
 
@@ -79,6 +81,37 @@ object ResolverTests extends TestSuite {
       )
     }
 
+    /** Has a dependency in every scope that matters, so one module can show
+      * what each setting includes and excludes.
+      *
+      * - `junit-platform-suite-engine` brings `junit-platform-suite-commons`
+      *   at runtime scope and `junit-platform-suite-api` at compile scope.
+      * - `slf4j-simple` is a `runMvnDeps`, filed by `coursierProject` under
+      *   the runtime configuration only.
+      * - `lombok` is a `compileMvnDeps`, filed under provided.
+      */
+    object everyScope extends ScalaModule {
+      def scalaVersion = scala3
+      override def mvnDeps = Seq(
+        mvn"org.junit.platform:junit-platform-suite-engine:$junitPlatformVersion"
+      )
+      override def runMvnDeps = Seq(mvn"org.slf4j:slf4j-simple:$slf4jVersion")
+      override def compileMvnDeps = Seq(
+        mvn"org.projectlombok:lombok:$lombokVersion"
+      )
+    }
+
+    /** Declares its own scope, so the graph for this module stays narrow
+      * whatever the rest of the build does.
+      */
+    object declaresCompile extends ScalaModule with GraphScopeModule {
+      def scalaVersion = scala3
+      override def dependencyGraphScope = Task { GraphScope.Compile }
+      override def mvnDeps = Seq(
+        mvn"org.junit.platform:junit-platform-suite-engine:$junitPlatformVersion"
+      )
+    }
+
     lazy val millDiscover = Discover[this.type]
   }
 
@@ -89,9 +122,13 @@ object ResolverTests extends TestSuite {
     * fail its own tests only, rather than taking the unrelated scenarios down
     * with it and hiding what each was meant to show.
     */
-  private def manifestOf(module: mill.javalib.JavaModule): domain.Manifest =
+  private def manifestOf(
+      module: mill.javalib.JavaModule,
+      scope: Option[GraphScope] = None
+  ): domain.Manifest =
     UnitTester(testBuild, null).scoped { eval =>
-      val moduleTrees = Resolver.resolveModuleTrees(eval.evaluator, Seq(module))
+      val moduleTrees =
+        Resolver.resolveModuleTrees(eval.evaluator, Seq(module), scope)
 
       // `toManifest` needs a task context, so it runs inside a task of its own
       // rather than in the bare test body.
@@ -119,6 +156,42 @@ object ResolverTests extends TestSuite {
 
   private def indirectOf(manifest: domain.Manifest): Set[String] =
     manifest.resolved.filterNot(_._2.isDirectDependency).keySet
+
+  /** The tree roots `ScopedRoots` computes for `module` at `scope`, the same
+    * way `Resolver.resolveModuleTrees` computes them.
+    *
+    * Deriving the expected roots from `ScopedRoots` rather than hardcoding a
+    * list is what makes the invariant test below cover a fourth scope
+    * automatically: whatever `ScopedRoots.apply` roots that scope at is
+    * exactly what the test checks against.
+    */
+  private def rootsOf(
+      module: mill.javalib.JavaModule,
+      scope: GraphScope
+  ): Seq[coursier.core.Dependency] =
+    UnitTester(testBuild, null).scoped { eval =>
+      val toRoots = Task.Anon {
+        val bindDep = module.bindDependency()
+        def bound(deps: Seq[mill.javalib.Dep]) =
+          deps.map(bindDep).map(_.dep)
+
+        ScopedRoots(
+          scope = scope,
+          synthetic = module.coursierDependencyTask(),
+          allMvnDeps = bound(module.allMvnDeps()),
+          runMvnDeps = bound(module.runMvnDeps()),
+          compileMvnDeps = bound(module.compileMvnDeps())
+        ).trees
+      }
+
+      eval.apply(toRoots) match {
+        case Right(result) => result.value
+        case Left(failure) =>
+          throw new java.lang.AssertionError(
+            s"Computing tree roots failed: $failure"
+          )
+      }
+    }
 
   val tests = Tests {
 
@@ -238,6 +311,144 @@ object ResolverTests extends TestSuite {
       }
     }
 
+    test("scope") {
+
+      test("compile omits the runtime-scoped transitive") {
+        val all = manifestOf(
+          testBuild.everyScope,
+          Some(GraphScope.Compile)
+        ).resolved.keySet
+        assert(
+          !all.contains(
+            s"org.junit.platform:junit-platform-suite-commons:$junitPlatformVersion"
+          )
+        )
+      }
+
+      test("compile omits runMvnDeps") {
+        // `coursierProject` files runMvnDeps under the runtime configuration
+        // alone, so at compile scope they are not in the resolution and must
+        // not be tree roots either.
+        val all = manifestOf(
+          testBuild.everyScope,
+          Some(GraphScope.Compile)
+        ).resolved.keySet
+        assert(!all.exists(_.startsWith("org.slf4j:slf4j-simple:")))
+      }
+
+      test("compile keeps the compile-scoped transitives") {
+        val all = manifestOf(
+          testBuild.everyScope,
+          Some(GraphScope.Compile)
+        ).resolved.keySet
+        assert(
+          all.contains(
+            s"org.junit.platform:junit-platform-suite-api:$junitPlatformVersion"
+          )
+        )
+      }
+
+      test("runtime adds the runtime-scoped transitive and runMvnDeps") {
+        val all = manifestOf(
+          testBuild.everyScope,
+          Some(GraphScope.Runtime)
+        ).resolved.keySet
+        assert(
+          all.contains(
+            s"org.junit.platform:junit-platform-suite-commons:$junitPlatformVersion"
+          )
+        )
+        assert(all.contains(s"org.slf4j:slf4j-simple:$slf4jVersion"))
+      }
+
+      test("runtime still omits compileMvnDeps") {
+        val all = manifestOf(
+          testBuild.everyScope,
+          Some(GraphScope.Runtime)
+        ).resolved.keySet
+        assert(!all.exists(_.startsWith("org.projectlombok:lombok:")))
+      }
+
+      test("all adds compileMvnDeps without losing runtime") {
+        val all =
+          manifestOf(testBuild.everyScope, Some(GraphScope.All)).resolved.keySet
+        assert(all.contains(s"org.projectlombok:lombok:$lombokVersion"))
+        assert(
+          all.contains(
+            s"org.junit.platform:junit-platform-suite-commons:$junitPlatformVersion"
+          )
+        )
+        assert(all.contains(s"org.slf4j:slf4j-simple:$slf4jVersion"))
+      }
+
+      test("no scope means runtime") {
+        val implied = manifestOf(testBuild.everyScope).resolved.keySet
+        val explicit = manifestOf(
+          testBuild.everyScope,
+          Some(GraphScope.Runtime)
+        ).resolved.keySet
+        assert(implied == explicit)
+      }
+
+      test("every scope reports its own tree roots as direct dependencies") {
+        // The #12 invariant, checked directly rather than by proxy: every
+        // dependency a scope declares as a tree root must appear in that
+        // scope's manifest, marked direct. `resolved.nonEmpty` alone would
+        // pass under many wrong scope tables -- scala-library always
+        // resolves regardless. Looping `GraphScope.values` and deriving the
+        // expected roots from `ScopedRoots` (rather than a hardcoded list)
+        // is what makes a fourth scope covered automatically.
+        GraphScope.values.foreach { scope =>
+          val manifest = manifestOf(testBuild.everyScope, Some(scope))
+          val direct = directOf(manifest)
+          val roots = rootsOf(testBuild.everyScope, scope)
+
+          assert(roots.nonEmpty)
+          for (root <- roots) {
+            val orgName = root.module.orgName
+            assert(
+              direct.exists(_.startsWith(s"$orgName:"))
+            )
+          }
+        }
+      }
+
+      test("a module's own declaration is used when no flag is passed") {
+        val all = manifestOf(testBuild.declaresCompile).resolved.keySet
+        assert(
+          !all.contains(
+            s"org.junit.platform:junit-platform-suite-commons:$junitPlatformVersion"
+          )
+        )
+        assert(
+          all.contains(
+            s"org.junit.platform:junit-platform-suite-api:$junitPlatformVersion"
+          )
+        )
+      }
+
+      test("a passed flag beats the module's declaration") {
+        val all = manifestOf(
+          testBuild.declaresCompile,
+          Some(GraphScope.Runtime)
+        ).resolved.keySet
+        assert(
+          all.contains(
+            s"org.junit.platform:junit-platform-suite-commons:$junitPlatformVersion"
+          )
+        )
+      }
+
+      test("a module without the trait defaults to runtime") {
+        val all = manifestOf(testBuild.everyScope).resolved.keySet
+        assert(
+          all.contains(
+            s"org.junit.platform:junit-platform-suite-commons:$junitPlatformVersion"
+          )
+        )
+      }
+    }
+
     test("every JavaModule in the build is discovered") {
       // Guards `computeModules` independently of resolution, so a resolution
       // failure cannot be mistaken for a discovery failure.
@@ -249,7 +460,9 @@ object ResolverTests extends TestSuite {
           "viaDepManagement",
           "viaBom",
           "bomOverridesTransitive",
-          "viaRuntimeScope"
+          "viaRuntimeScope",
+          "everyScope",
+          "declaresCompile"
         )
       )
     }

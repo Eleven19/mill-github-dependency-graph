@@ -3,3 +3,8 @@
 .metals/
 out/
 manifest.json
+
+# Agent planning and design scratch. These are working notes for an LLM
+# session, not project documentation, so they stay out of the repository.
+docs/superpowers/
+.superpowers/
