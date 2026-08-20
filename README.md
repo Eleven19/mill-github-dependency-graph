@@ -51,7 +51,7 @@ resolves to `mill-github-dependency-graph_mill1_3`.
 |---|---|---|
 | **Plugin** | `io.eleven19.mill-github-dependency-graph` | `mill-github-dependency-graph_mill1_3` |
 | **Domain** | `io.eleven19.mill-github-dependency-graph` | `github-dependency-graph-domain_3` |
-| **Report** | `io.eleven19.mill-github-dependency-graph` | `github-dependency-graph-report_3` |
+| **Report** | `io.eleven19.mill-github-dependency-graph` | `github-dependency-graph-report_3` *(first published in the release after `0.1.0`)* |
 
 The plugin compiles against the Mill API, so its artifact carries the
 `_mill1` platform suffix that Mill plugins use to declare which Mill binary
@@ -126,8 +126,8 @@ dependencies](https://docs.github.com/en/code-security/supply-chain-security/und
 > **Try `generate` before you wire up `submit`.** `generate` produces the
 > manifests that `submit` sends — `submit` just wraps them with the commit
 > sha, ref and job metadata and POSTs the lot. Every option below works
-> identically on both commands, so you can tune your flags locally with
-> `show` and then paste the same ones into your workflow.
+> identically on `generate` and `submit`, so you can tune your flags locally
+> with `show` and then paste the same ones into your workflow.
 
 **`report`** renders the same graph as a single self-contained HTML file —
 one page, no server or extra assets — that you can open straight in a
@@ -137,15 +137,21 @@ browser. Like `generate`, it never contacts GitHub:
 ./mill io.eleven19.mill.github.dependency.graph.Graph/report
 ```
 
+> `report`, and `--output` on any command, are newer than the latest
+> release, `0.1.0`. If `Graph/report` fails with `Cannot resolve report`,
+> your pinned coordinate predates it — bump the version in
+> `build.mill.yaml` once a release containing it is out.
+
 See [HTML report](#html-report) for what is on the page.
 
 ## Configuration
 
-> **These options need a release newer than `0.1.0`.** If `--scope` gives you
-> `Unknown arguments: "--scope"`, your pinned plugin predates them — bump the
-> coordinate in `build.mill.yaml`.
+> **These options — and `Graph/report` itself — need a release newer than
+> `0.1.0`.** If `--scope` gives you `Unknown arguments: "--scope"`, or
+> `Graph/report` gives you `Cannot resolve report`, your pinned plugin
+> predates them — bump the coordinate in `build.mill.yaml`.
 
-Both commands accept the same four options. You need none of them to start:
+All three commands accept the same four options. You need none of them to start:
 out of the box the plugin covers every module in your build, at runtime scope.
 
 | Option | Values | Default | What it does |
@@ -153,7 +159,7 @@ out of the box the plugin covers every module in your build, at runtime scope.
 | `--scope` | `compile`, `runtime`, `all` | unset — each module decides (see `dependencyGraphScope`) | How much of each module's dependency graph to report |
 | `--modules` | Mill selectors, repeatable | every module | Only cover the modules these selectors name |
 | `--exclude-modules` | Mill selectors, repeatable | nothing excluded | Drop modules, applied after `--modules` |
-| `--output` | a file path | unset — each command's own `out/` task directory | Also write the manifests as JSON to this path. Mill's own `out/` metadata file is written either way, so this adds a copy rather than moving it. A relative path resolves against the workspace root. |
+| `--output` | a file path | `generate`/`submit`: unset — nothing extra is written; only Mill's own `out/…/generate.json` exists. `report`: unset — the command's own `out/…/report.dest/graph-report.html` | `generate`/`submit`: also write the manifests as JSON to this path, as a copy — Mill's own `out/…/generate.json` is written either way. `report`: writes the HTML page to this path *instead of* its default location — no `report.dest/` is created. A relative path resolves against the workspace root for all three. |
 
 There is also one build-file setting:
 
@@ -279,7 +285,7 @@ submitting 3 of 5 modules, 2 excluded by selector
 
 #### Three rules of selector matching that will surprise you
 
-**A selector Mill cannot resolve is a hard error.** Neither command falls back
+**A selector Mill cannot resolve is a hard error.** No command falls back
 to covering fewer modules:
 
 ```
@@ -322,18 +328,21 @@ the subtrees you actually have:
 
 #### Selectors that leave nothing to report are a hard error
 
-If your selectors leave no modules, both commands fail:
+If your selectors leave no modules, all three commands fail:
 
 ```
 The selectors given left no modules to report. --modules app.__; --exclude-modules app.__.
 ```
 
-This looks strict, and it is there for a specific reason. GitHub keys each
-submission on a *correlator* — for this plugin, your workflow and job name —
-together with the detector name. An empty submission is therefore not ignored:
-it **replaces** everything this plugin previously submitted under that
-correlator, and Dependabot goes quiet. Failing the build is much easier to
-notice.
+This looks strict, and for `submit` there is a specific reason. GitHub keys
+each submission on a *correlator* — for this plugin, your workflow and job
+name — together with the detector name. An empty submission is therefore not
+ignored: it **replaces** everything this plugin previously submitted under
+that correlator, and Dependabot goes quiet. Failing the build is much easier
+to notice. The guard itself lives in `generate` — `submit` and `report`
+both fail the same way because they call `generate` to build the graph
+before doing anything else with it. The alternative would be a `generate` or
+`report` run that silently succeeds with nothing in it.
 
 (A build with no `JavaModule` at all is not caught by this check — there are
 no selectors to blame. It submits an empty graph.)
@@ -371,7 +380,9 @@ or attach as a CI artifact:
 ```
 
 With no `--output`, it writes into the command's own Mill task directory and
-logs the absolute path it wrote.
+logs the absolute path it wrote. `--scope`, `--modules` and `--exclude-modules`
+work exactly as they do on `generate`, and the page's header states which
+scope and which module selection it was built from.
 
 The page has two tabs, and one filter box that searches whichever tab is
 open:
@@ -445,8 +456,8 @@ for scope in runtime all; do
   ./mill io.eleven19.mill.github.dependency.graph.Graph/generate --scope "$scope"
   python3 -c "
 import json
-report = json.load(open('out/io.eleven19.mill.github.dependency.graph.Graph/generate.json'))
-manifests = report.get('value', report)
+payload = json.load(open('out/io.eleven19.mill.github.dependency.graph.Graph/generate.json'))
+manifests = payload.get('value', payload)
 print('$scope:', sum(len(m['resolved']) for m in manifests.values()), 'dependencies')
 "
 done
