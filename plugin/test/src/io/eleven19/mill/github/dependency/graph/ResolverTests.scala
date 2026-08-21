@@ -5,6 +5,7 @@ import io.eleven19.github.dependency.graph.domain.DependencyScope
 import mill._
 import mill.api.Discover
 import mill.scalalib._
+import mill.scalajslib._
 import mill.testkit.{TestRootModule, UnitTester}
 import utest._
 
@@ -23,14 +24,30 @@ import utest._
 object ResolverTests extends TestSuite {
 
   private val scala3 = "3.3.4"
+  private val scalaJS = "1.16.0"
   private val zioVersion = "2.1.14"
   private val jacksonBomVersion = "2.18.2"
   private val jacksonPinnedVersion = "2.15.0"
   private val junitPlatformVersion = "1.11.4"
   private val sourcecodeVersion = "0.4.2"
   private val sourcecode = s"com.lihaoyi:sourcecode_3:$sourcecodeVersion"
+  private val sourcecodeSjs =
+    s"com.lihaoyi:sourcecode_sjs1_3:$sourcecodeVersion"
   private val slf4jVersion = "2.0.16"
   private val lombokVersion = "1.18.36"
+
+  /** MorphirJSModule's platforming step: versionless `::` coords parse as
+    * `CrossVersion.Binary(platformed = false)` and would otherwise bind to
+    * the JVM jar on a Scala.js module.
+    */
+  private def platformScalaDep(dep: mill.javalib.Dep): mill.javalib.Dep =
+    dep.cross match {
+      case mill.api.CrossVersion.Binary(false) =>
+        dep.copy(cross = mill.api.CrossVersion.Binary(true))
+      case mill.api.CrossVersion.Full(false) =>
+        dep.copy(cross = mill.api.CrossVersion.Full(true))
+      case _ => dep
+    }
 
   object testBuild extends TestRootModule {
 
@@ -130,6 +147,37 @@ object ResolverTests extends TestSuite {
       def scalaVersion = scala3
       override def moduleDeps = Seq(lib)
       override def mvnDeps = Seq(mvn"org.slf4j:slf4j-api:$slf4jVersion")
+    }
+
+    /** Issue #32: a Scala.js library platforms versionless `::` coords in
+      * `bindDependency` (as MorphirJSModule does). A depender that does not
+      * share that override — Morphir's `ScalaJSTests` children are the
+      * reported case — used to bind those coords with *its* binder, producing
+      * the JVM module key (`sourcecode_3`) while the resolution held the
+      * Scala.js one (`sourcecode_sjs1_3`). `DependencyTree` then threw
+      * "Cannot find … in reconciled versions".
+      */
+    object jsLib extends ScalaJSModule {
+      def scalaVersion = scala3
+      def scalaJSVersion = scalaJS
+      override def depManagement = super.depManagement() ++ Seq(
+        mvn"com.lihaoyi::sourcecode:$sourcecodeVersion"
+      )
+      override def mvnDeps = Seq(mvn"com.lihaoyi::sourcecode")
+      override def bindDependency = Task.Anon { (dep: mill.javalib.Dep) =>
+        super.bindDependency()(platformScalaDep(dep))
+      }
+      override def resolvedDepsWarnNonPlatform = false
+    }
+
+    /** Stands in for a `ScalaJSTests` child: `moduleDeps` on the library,
+      * default binder (no platforming of versionless `::` coords).
+      */
+    object jsLibDepender extends ScalaJSModule {
+      def scalaVersion = scala3
+      def scalaJSVersion = scalaJS
+      override def moduleDeps = Seq(jsLib)
+      override def resolvedDepsWarnNonPlatform = false
     }
 
     /** The same edge, with the module opting out. */
@@ -551,6 +599,29 @@ object ResolverTests extends TestSuite {
           assert(manifestOf(testBuild.app, Some(scope)).resolved.nonEmpty)
         }
       }
+
+      test("issue #32: bind moduleDeps coords with the dependency's binder") {
+
+        test("does not abort when the depender has a different binder") {
+          // Before the fix this threw "Cannot find com.lihaoyi:sourcecode_3
+          // in reconciled versions" — the depender's binder produced the
+          // JVM key while the resolution held the Scala.js one.
+          assert(manifestOf(testBuild.jsLibDepender).resolved.nonEmpty)
+        }
+
+        test("reports the walked Scala.js dependency as indirect") {
+          val resolved = manifestOf(testBuild.jsLibDepender).resolved
+          assert(resolved.contains(sourcecodeSjs))
+          assert(!resolved(sourcecodeSjs).isDirectDependency)
+          assert(!resolved.contains(sourcecode))
+        }
+
+        test("still reports the library module's own managed version") {
+          assert(
+            manifestOf(testBuild.jsLib).resolved.contains(sourcecodeSjs)
+          )
+        }
+      }
     }
 
     test("dependency scope") {
@@ -620,6 +691,8 @@ object ResolverTests extends TestSuite {
           "declaresCompile",
           "lib",
           "app",
+          "jsLib",
+          "jsLibDepender",
           "appOptedOut",
           "hasTests",
           "hasTests.test"

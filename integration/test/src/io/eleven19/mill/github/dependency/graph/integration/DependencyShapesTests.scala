@@ -32,7 +32,9 @@ object DependencyShapesTests extends TestSuite {
           "everyScope",
           "declaresCompile",
           "internalLib",
-          "dependsOnInternal"
+          "dependsOnInternal",
+          "jsLib",
+          "jsLibDepender"
         )
       )
     }
@@ -98,6 +100,25 @@ object DependencyShapesTests extends TestSuite {
               .contains("com.lihaoyi:sourcecode_3:0.4.2")
           )
         }
+      }
+    }
+
+    test("issue #32: Scala.js moduleDeps with a mismatched binder") {
+
+      test("the depender resolves without aborting") {
+        // Before the fix, walking jsLib's versionless coords with
+        // jsLibDepender's binder looked up sourcecode_3 in a resolution
+        // that held sourcecode_sjs1_3.
+        val reported =
+          Fixtures.defaultManifests("dependency-shapes")("jsLibDepender")
+        assert(reported.contains("com.lihaoyi:sourcecode_sjs1_3:0.4.2"))
+        assert(!reported.contains("com.lihaoyi:sourcecode_3:0.4.2"))
+      }
+
+      test("the library itself still reports the Scala.js coordinate") {
+        val reported =
+          Fixtures.defaultManifests("dependency-shapes")("jsLib")
+        assert(reported.contains("com.lihaoyi:sourcecode_sjs1_3:0.4.2"))
       }
     }
 
