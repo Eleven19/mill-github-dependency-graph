@@ -11,4 +11,4 @@ mill-build:
     # This tracks the last published release rather than the working tree, so
     # it lags behind by a version. Bump it after each release to dogfood what
     # was just published.
-    - "io.eleven19.mill-github-dependency-graph::mill-github-dependency-graph_mill$MILL_BIN_PLATFORM:0.3.0"
+    - "io.eleven19.mill-github-dependency-graph::mill-github-dependency-graph_mill$MILL_BIN_PLATFORM:0.3.1"
