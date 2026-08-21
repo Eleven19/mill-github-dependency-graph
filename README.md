@@ -35,7 +35,7 @@ Add the plugin as a build dependency in your `build.mill.yaml`:
 ```yaml
 mill-build:
   mvnDeps:
-    - "io.eleven19.mill-github-dependency-graph::mill-github-dependency-graph_mill$MILL_BIN_PLATFORM:0.3.0"
+    - "io.eleven19.mill-github-dependency-graph::mill-github-dependency-graph_mill$MILL_BIN_PLATFORM:0.3.1"
 ```
 
 Check the Maven Central badge above for the current version — the coordinate
