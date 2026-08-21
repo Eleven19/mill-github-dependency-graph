@@ -53,6 +53,15 @@ object Resolver {
       // Their own dependencies are what a consumer of this module picks up
       // and what its manifest has to report.
       val moduleDeps = javaModule.recursiveModuleDeps
+      // Each dependency module's binder, not this module's: a TestModule (or
+      // any module that does not share the dependency's `bindDependency`
+      // overrides) would otherwise rewrite coordinates the dependency's own
+      // resolution never produced. That is issue #32 on Scala.js builds that
+      // platform versionless YAML `::` coords in the library module only —
+      // the test module bound them as the JVM artifact, and
+      // `DependencyTree` threw "Cannot find … in reconciled versions".
+      val moduleDepBinders =
+        Task.sequence(moduleDeps.map(_.bindDependency))
       val moduleDepAllMvnDeps = Task.sequence(moduleDeps.map(_.allMvnDeps))
       val moduleDepRunMvnDeps = Task.sequence(moduleDeps.map(_.runMvnDeps))
       val moduleDepCompileMvnDeps =
@@ -66,8 +75,15 @@ object Resolver {
         // The opt-out is expressed by handing the scope table empty module-dep
         // lists, so the table itself never branches on it.
         val withModuleDeps = includeModuleDepsTask()
-        def fromModuleDeps(deps: Seq[Seq[mill.javalib.Dep]]) =
-          if (withModuleDeps) bound(deps.flatten) else Nil
+        def fromModuleDeps(depsPerModule: Seq[Seq[mill.javalib.Dep]]) =
+          if (withModuleDeps)
+            moduleDepBinders()
+              .lazyZip(depsPerModule)
+              .flatMap { (bind, deps) =>
+                deps.map(bind).map(_.dep)
+              }
+              .toSeq
+          else Nil
 
         val roots = ScopedRoots(
           scope = scopeTask(),

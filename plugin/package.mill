@@ -50,9 +50,12 @@ object `package` extends _root_.build.CommonScalaModule
     // test sources, so `Resolver` can be exercised against actual modules.
     // `mill-libs-scalalib` and `mill-core-resolve` are only `compileMvnDeps`
     // of the plugin, so the tests need them on their own runtime classpath.
+    // `mill-libs-scalajslib` is for issue #32: a Scala.js library that
+    // platforms versionless coords, walked from a depender that does not.
     override def mvnDeps = super.mvnDeps() ++ Seq(
       mvn"com.lihaoyi::mill-testkit:${mill.api.BuildInfo.millVersion}",
       mvn"com.lihaoyi::mill-libs-scalalib:${mill.api.BuildInfo.millVersion}",
+      mvn"com.lihaoyi::mill-libs-scalajslib:${mill.api.BuildInfo.millVersion}",
       mvn"com.lihaoyi::mill-core-resolve:${mill.api.BuildInfo.millVersion}",
       mvn"com.lihaoyi::utest:0.9.5"
     )

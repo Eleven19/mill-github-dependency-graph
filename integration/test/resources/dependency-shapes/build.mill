@@ -3,7 +3,7 @@
 
 package build
 
-import mill._, scalalib._
+import mill._, scalalib._, scalajslib._
 
 // Each module below is one dependency shape the plugin has had to get right.
 // They are deliberately small: the point is the shape, not the size.
@@ -80,4 +80,38 @@ object internalLib extends Fixture {
 
 object dependsOnInternal extends Fixture {
   override def moduleDeps = Seq(internalLib)
+}
+
+/** Issue #32: Scala.js library that platforms versionless `::` coords in
+  * `bindDependency`, plus a depender that does not share that override.
+  * Walking `moduleDeps` with the depender's binder used to look up the JVM
+  * artifact (`sourcecode_3`) in a resolution that held the Scala.js one.
+  */
+def platformScalaDep(dep: Dep): Dep =
+  dep.cross match {
+    case mill.api.CrossVersion.Binary(false) =>
+      dep.copy(cross = mill.api.CrossVersion.Binary(true))
+    case mill.api.CrossVersion.Full(false) =>
+      dep.copy(cross = mill.api.CrossVersion.Full(true))
+    case _ => dep
+  }
+
+trait JsFixture extends ScalaJSModule {
+  def scalaVersion = "3.3.4"
+  def scalaJSVersion = "1.16.0"
+  override def resolvedDepsWarnNonPlatform = false
+}
+
+object jsLib extends JsFixture {
+  override def depManagement = super.depManagement() ++ Seq(
+    mvn"com.lihaoyi::sourcecode:0.4.2"
+  )
+  override def mvnDeps = Seq(mvn"com.lihaoyi::sourcecode")
+  override def bindDependency = Task.Anon { (dep: Dep) =>
+    super.bindDependency()(platformScalaDep(dep))
+  }
+}
+
+object jsLibDepender extends JsFixture {
+  override def moduleDeps = Seq(jsLib)
 }
